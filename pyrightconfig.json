@@ -1,0 +1,27 @@
+{
+  "include": ["apps/api", "apps/worker"],
+  "exclude": [
+    "**/node_modules",
+    "**/__pycache__",
+    "**/.venv"
+  ],
+  "typeCheckingMode": "basic",
+  "executionEnvironments": [
+    {
+      "root": "apps/api",
+      "pythonVersion": "3.9",
+      "extraPaths": [
+        "apps/api",
+        "apps/api/.venv/lib/python3.9/site-packages"
+      ]
+    },
+    {
+      "root": "apps/worker",
+      "pythonVersion": "3.9",
+      "extraPaths": [
+        "apps/worker",
+        "apps/worker/.venv/lib/python3.9/site-packages"
+      ]
+    }
+  ]
+}

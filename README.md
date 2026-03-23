@@ -1,8 +1,47 @@
 # ParcelOps Recovery Copilot
 
-ParcelOps Recovery Copilot is a local-first demo product for detecting parcel and 3PL billing errors, explaining why they happened, and helping operators generate recovery actions.
+ParcelOps Recovery Copilot is a local-first demo product for detecting parcel and 3PL billing errors, explaining what happened, and helping operators turn findings into recovery actions.
 
-This repository is scaffolded for stepwise implementation. The original all-in-one starter document has been split into focused reference docs and one task file per implementation step so future work can stay scoped and easy to navigate.
+Task 01 is now implemented as a minimal bootstrap stack:
+
+- `web`: Next.js placeholder operator dashboard at `http://localhost:3000`
+- `api`: FastAPI service with `GET /health` at `http://localhost:8000/health`
+- `worker`: Celery worker connected to Redis
+- `postgres`: PostgreSQL for upcoming persistence work
+- `redis`: Redis broker and cache
+
+## Quick start
+
+1. Copy the environment template:
+
+   ```bash
+   cp .env.example .env
+   ```
+
+2. Build and start the stack:
+
+   ```bash
+   docker compose up --build
+   ```
+
+3. Check the running services:
+
+   - Web UI: `http://localhost:3000`
+   - Web health: `http://localhost:3000/health`
+   - API health: `http://localhost:8000/health`
+   - API docs: `http://localhost:8000/docs`
+
+4. Stop the stack:
+
+   ```bash
+   docker compose down
+   ```
+
+To remove the database volume as well:
+
+```bash
+docker compose down -v
+```
 
 ## Repository layout
 
@@ -12,32 +51,34 @@ apps/
   web/            # Next.js frontend
   worker/         # Celery worker
 packages/
-  shared/         # Shared contracts/types when needed
+  shared/         # Shared contracts and types when needed
 infra/
   postgres/       # Postgres-specific assets
   redis/          # Redis-specific assets
 data/
   raw/            # Unmodified source files
   generated/      # Synthetic demo datasets
-  uploads/        # Local uploaded files for the demo
+  uploads/        # Local mounted storage for demo uploads
 docs/
-  reference/      # Stable product and architecture reference
+  reference/      # Stable project reference
   tasks/          # One file per implementation task
 scripts/          # Helper scripts and generators
+docker-compose.yml
+.env.example
 ```
 
-## Documentation map
+## Service notes
 
-- Reference index: [docs/reference/README.md](docs/reference/README.md)
+- The stack is intentionally minimal and health-oriented for this bootstrap task.
+- The web app is a placeholder operator shell, not the full product UI.
+- Postgres is provisioned and reachable by service name, but schema setup begins in Task 02.
+- The worker runs a basic Celery app and uses Redis as broker and result backend.
+- Uploaded-file storage is mounted to `./data/uploads` for future ingestion work.
+
+## Subsystem docs
+
+- Web: [apps/web/README.md](apps/web/README.md)
+- API: [apps/api/README.md](apps/api/README.md)
+- Worker: [apps/worker/README.md](apps/worker/README.md)
+- Reference docs: [docs/reference/README.md](docs/reference/README.md)
 - Task index: [docs/tasks/README.md](docs/tasks/README.md)
-- First implementation task: [docs/tasks/01-bootstrap-compose.md](docs/tasks/01-bootstrap-compose.md)
-
-## Current state
-
-The repo now contains:
-
-- the initial directory scaffold for the planned monorepo
-- stable reference docs for product context and constraints
-- one task file per implementation step from bootstrap through demo polish
-
-Application code, Compose services, and runtime setup should start with Task 01.
