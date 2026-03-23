@@ -4,24 +4,39 @@ This is the FastAPI backend for ParcelOps Recovery Copilot.
 
 ## Current scope
 
-Task 01 provides:
+Task 02 provides:
 
-- the FastAPI application entrypoint
-- environment-driven service settings
+- the FastAPI application entrypoint and route structure
+- environment-driven service and database settings
+- SQLAlchemy models split by domain
+- Alembic migrations with an initial schema
 - `GET /health`
+- `GET /db-health`
 - generated docs at `/docs`
-
-Database schema and persistence work start in Task 02.
 
 ## Commands
 
-Run inside the containerized stack from the repository root:
+Run the API service inside the containerized stack from the repository root:
 
 ```bash
 docker compose up --build api
 ```
 
-Useful endpoints:
+Run only the backing services in Docker and the API on the host:
+
+```bash
+../../scripts/start-deps.sh
+../../scripts/run-api-local.sh
+```
+
+Run migrations locally from `apps/api`:
+
+```bash
+./.venv/bin/alembic upgrade head
+```
+
+Useful endpoints after the database is available:
 
 - Health: `http://localhost:8000/health`
+- DB health: `http://localhost:8000/db-health`
 - Docs: `http://localhost:8000/docs`
