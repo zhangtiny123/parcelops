@@ -73,6 +73,31 @@ This workflow uses the host-exposed ports that Compose already publishes:
 
 The local run scripts automatically point `DATABASE_URL`, `CELERY_BROKER_URL`, and related settings at `localhost` unless you override them.
 
+## Demo dataset
+
+Generate or refresh the synthetic demo dataset with one command:
+
+```bash
+./scripts/generate-demo-dataset.sh
+```
+
+The generator writes reusable CSVs into `data/generated/`:
+
+- `orders.csv`
+- `shipments.csv`
+- `parcel_invoice_lines.csv`
+- `shipment_events.csv`
+- `three_pl_invoice_lines.csv`
+- `rate_card_rules.csv`
+
+The default seed is `20260323`, so regenerated data stays stable for demos. The dataset intentionally includes 18 seeded anomalies across duplicate parcel charges, billed-weight mismatches, zone mismatches, incorrect 3PL rates, and orphan invoice rows.
+
+To write the output somewhere else or use a different seed:
+
+```bash
+./scripts/generate-demo-dataset.sh --seed 20260401 --output-dir /tmp/parcelops-demo
+```
+
 ## Repository layout
 
 ```text
