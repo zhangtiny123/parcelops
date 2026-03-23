@@ -1,17 +1,13 @@
 from __future__ import annotations
 
-from pathlib import Path
-
-from alembic import command
-from alembic.config import Config
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, inspect
 
 from app.db.session import reset_database_state
 from app.main import create_app
 from app.settings import reset_settings_cache
+from conftest import run_migrations
 
-API_ROOT = Path(__file__).resolve().parents[1]
 EXPECTED_TABLES = {
     "order_records",
     "parcel_invoice_lines",
@@ -21,14 +17,8 @@ EXPECTED_TABLES = {
     "shipment_events",
     "shipments",
     "three_pl_invoice_lines",
+    "upload_jobs",
 }
-
-
-def _run_migrations(database_url: str) -> None:
-    config = Config(str(API_ROOT / "alembic.ini"))
-    config.set_main_option("script_location", str(API_ROOT / "alembic"))
-    config.set_main_option("sqlalchemy.url", database_url)
-    command.upgrade(config, "head")
 
 
 def test_initial_migration_creates_expected_tables(tmp_path, monkeypatch) -> None:
@@ -37,7 +27,7 @@ def test_initial_migration_creates_expected_tables(tmp_path, monkeypatch) -> Non
     reset_settings_cache()
     reset_database_state()
 
-    _run_migrations(database_url)
+    run_migrations(database_url)
 
     engine = create_engine(database_url)
     try:
@@ -54,7 +44,7 @@ def test_db_health_reports_connectivity(tmp_path, monkeypatch) -> None:
     reset_settings_cache()
     reset_database_state()
 
-    _run_migrations(database_url)
+    run_migrations(database_url)
     reset_settings_cache()
     reset_database_state()
 

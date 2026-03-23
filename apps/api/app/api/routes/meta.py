@@ -1,4 +1,4 @@
-from typing import Annotated
+from typing_extensions import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.exc import SQLAlchemyError
@@ -9,7 +9,6 @@ from app.db.session import get_db
 from app.settings import get_settings
 
 router = APIRouter(tags=["meta"])
-DatabaseSession = Annotated[Session, Depends(get_db)]
 
 
 @router.get("/")
@@ -21,6 +20,7 @@ def read_root() -> dict[str, str]:
         "docs_url": "/docs",
         "health_url": "/health",
         "db_health_url": "/db-health",
+        "uploads_url": "/uploads",
     }
 
 
@@ -37,11 +37,12 @@ def read_health() -> dict[str, object]:
             "redis_host": settings.redis_host,
         },
         "storage_root": settings.local_storage_root,
+        "max_upload_size_bytes": settings.max_upload_size_bytes,
     }
 
 
 @router.get("/db-health")
-def read_db_health(db: DatabaseSession) -> dict[str, object]:
+def read_db_health(db: Annotated[Session, Depends(get_db)]) -> dict[str, object]:
     try:
         return get_database_health(db)
     except SQLAlchemyError as exc:

@@ -1,6 +1,7 @@
 from fastapi import FastAPI
 
 from app.api.routes.meta import router as meta_router
+from app.api.routes.uploads import router as uploads_router
 from app.settings import get_settings
 
 
@@ -13,6 +14,7 @@ def create_app() -> FastAPI:
         summary="Backend foundation for ParcelOps Recovery Copilot",
     )
     app.include_router(meta_router)
+    app.include_router(uploads_router)
 
     return app
 
