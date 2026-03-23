@@ -16,6 +16,7 @@ EXPECTED_TABLES = {
     "recovery_issues",
     "shipment_events",
     "shipments",
+    "upload_mappings",
     "three_pl_invoice_lines",
     "upload_jobs",
 }

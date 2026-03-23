@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing_extensions import Optional
 
-from sqlalchemy import DateTime, Integer, String
+from sqlalchemy import JSON, DateTime, ForeignKey, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base_class import Base
@@ -38,4 +38,33 @@ class UploadJob(Base):
         nullable=False,
         default=utcnow,
         index=True,
+    )
+
+
+class UploadMapping(Base):
+    __tablename__ = "upload_mappings"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=generate_uuid)
+    upload_job_id: Mapped[str] = mapped_column(
+        ForeignKey("upload_jobs.id"),
+        nullable=False,
+        unique=True,
+        index=True,
+    )
+    source_kind: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    column_mappings_json: Mapped[list[dict[str, str]]] = mapped_column(
+        JSON,
+        nullable=False,
+        default=list,
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=utcnow,
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=utcnow,
+        onupdate=utcnow,
     )
