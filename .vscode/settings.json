@@ -4,5 +4,6 @@
     "${workspaceFolder}/apps/api/.venv/lib/python3.9/site-packages",
     "${workspaceFolder}/apps/worker",
     "${workspaceFolder}/apps/worker/.venv/lib/python3.9/site-packages"
-  ]
+  ],
+  "python.languageServer": "None"
 }

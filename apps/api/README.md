@@ -14,6 +14,11 @@ Task 02 provides:
 - `GET /db-health`
 - generated docs at `/docs`
 
+Task 07 adds:
+
+- `POST /issues/detect` to run deterministic recovery-issue detection against canonical data
+- `GET /issues` to list detected recovery issues with basic filters
+
 ## Commands
 
 Run the API service inside the containerized stack from the repository root:
@@ -39,4 +44,5 @@ Useful endpoints after the database is available:
 
 - Health: `http://localhost:8000/health`
 - DB health: `http://localhost:8000/db-health`
+- Issues: `http://localhost:8000/issues`
 - Docs: `http://localhost:8000/docs`
