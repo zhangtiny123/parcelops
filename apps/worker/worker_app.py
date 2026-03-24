@@ -1,33 +1,19 @@
 import logging
-import os
+import sys
+from pathlib import Path
 from urllib.parse import urlparse
 
-from celery import Celery
 from celery.signals import worker_ready
 
+API_ROOT = Path(__file__).resolve().parents[1] / "api"
+if str(API_ROOT) not in sys.path:
+    sys.path.insert(0, str(API_ROOT))
 
-def _redis_url(database_index: str) -> str:
-    redis_host = os.getenv("REDIS_HOST", "redis")
-    return f"redis://{redis_host}:6379/{database_index}"
-
-
-broker_url = os.getenv(
-    "CELERY_BROKER_URL",
-    _redis_url(os.getenv("REDIS_BROKER_DB", "0")),
-)
-result_backend = os.getenv(
-    "CELERY_RESULT_BACKEND",
-    _redis_url(os.getenv("REDIS_RESULT_DB", "1")),
-)
-
-app = Celery("parcelops_worker", broker=broker_url, backend=result_backend)
-app.conf.update(
-    broker_connection_retry_on_startup=True,
-    task_default_queue="parcelops",
-    task_track_started=True,
-)
+from app.celery_app import broker_url, celery_app  # noqa: E402
+import app.normalization_tasks  # noqa: F401, E402
 
 logger = logging.getLogger(__name__)
+app = celery_app
 
 
 @app.task(name="parcelops.ping")

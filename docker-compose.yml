@@ -61,12 +61,16 @@ services:
 
   worker:
     build:
-      context: ./apps/worker
+      context: .
+      dockerfile: apps/worker/Dockerfile
     depends_on:
+      postgres:
+        condition: service_healthy
       redis:
         condition: service_healthy
     environment:
       APP_ENV: ${APP_ENV}
+      DATABASE_URL: ${DATABASE_URL}
       REDIS_HOST: ${REDIS_HOST}
       REDIS_BROKER_DB: ${REDIS_BROKER_DB}
       REDIS_RESULT_DB: ${REDIS_RESULT_DB}

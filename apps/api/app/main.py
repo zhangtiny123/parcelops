@@ -2,11 +2,13 @@ from fastapi import FastAPI
 
 from app.api.routes.meta import router as meta_router
 from app.api.routes.uploads import router as uploads_router
+from app.celery_app import configure_celery_app
 from app.settings import get_settings
 
 
 def create_app() -> FastAPI:
     settings = get_settings()
+    configure_celery_app()
 
     app = FastAPI(
         title=settings.app_name,

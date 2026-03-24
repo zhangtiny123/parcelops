@@ -11,9 +11,21 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db
-from app.file_previews import FilePreview, load_file_preview
+from app.file_previews import PREVIEW_ROW_LIMIT, FilePreview
 from app.models.common import generate_uuid
-from app.models.uploads import UPLOAD_STATUS_UPLOADED, UploadJob, UploadMapping
+from app.models.uploads import (
+    UPLOAD_STATUS_MAPPED,
+    UPLOAD_STATUS_NORMALIZATION_QUEUED,
+    UPLOAD_STATUS_NORMALIZED,
+    UPLOAD_STATUS_NORMALIZED_WITH_ERRORS,
+    UPLOAD_STATUS_NORMALIZING,
+    UPLOAD_STATUS_UPLOADED,
+    UploadJob,
+    UploadMapping,
+    UploadNormalizationError,
+    UploadNormalizationRecord,
+)
+from app.normalization_tasks import normalize_upload_task
 from app.schema_mapping import (
     infer_source_kind_from_columns,
     infer_source_kind_from_filename,
@@ -23,6 +35,7 @@ from app.schema_mapping import (
     suggest_column_mappings,
 )
 from app.settings import get_settings
+from app.upload_files import get_storage_root, load_upload_preview
 
 router = APIRouter(prefix="/uploads", tags=["uploads"])
 
@@ -59,6 +72,12 @@ class UploadJobRead(BaseModel):
     file_size_bytes: int
     status: str
     source_kind: Optional[str]
+    normalization_task_id: Optional[str]
+    normalized_row_count: int
+    normalization_error_count: int
+    normalization_started_at: Optional[datetime]
+    normalization_completed_at: Optional[datetime]
+    last_error: Optional[str]
     uploaded_at: datetime
 
 
@@ -114,6 +133,28 @@ class UploadSuggestedMappingRead(BaseModel):
     canonical_fields: list[CanonicalFieldRead]
     suggested_mappings: list[ColumnMappingSuggestionRead]
     saved_mapping: Optional[UploadMappingRead]
+
+
+class UploadNormalizationErrorRead(BaseModel):
+    id: str
+    upload_job_id: str
+    source_kind: str
+    row_number: int
+    raw_row_ref: Optional[str]
+    error_message: str
+    row_data: dict[str, str]
+    created_at: datetime
+
+
+class UploadNormalizationRecordRead(BaseModel):
+    id: str
+    upload_job_id: str
+    source_kind: str
+    row_number: int
+    raw_row_ref: str
+    canonical_table: str
+    canonical_record_id: str
+    created_at: datetime
 
 
 def _sanitize_filename(filename: str | None) -> str:
@@ -215,7 +256,7 @@ async def _persist_file(
 
 
 def _get_storage_root() -> Path:
-    return Path(get_settings().local_storage_root).resolve()
+    return get_storage_root()
 
 
 def _get_upload_job_or_404(upload_id: str, db: Session) -> UploadJob:
@@ -228,37 +269,8 @@ def _get_upload_job_or_404(upload_id: str, db: Session) -> UploadJob:
     return upload_job
 
 
-def _resolve_upload_file_path(upload_job: UploadJob) -> Path:
-    storage_root = _get_storage_root()
-    file_path = (storage_root / upload_job.storage_key).resolve()
-    try:
-        file_path.relative_to(storage_root)
-    except ValueError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Upload storage path is invalid.",
-        ) from exc
-
-    if not file_path.exists():
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Uploaded file is no longer available.",
-        )
-
-    return file_path
-
-
 def _load_upload_preview(upload_job: UploadJob) -> FilePreview:
-    try:
-        return load_file_preview(
-            file_path=_resolve_upload_file_path(upload_job),
-            file_type=upload_job.file_type,
-        )
-    except (OSError, UnicodeDecodeError, ValueError) as exc:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Uploaded file could not be parsed for preview.",
-        ) from exc
+    return load_upload_preview(upload_job, row_limit=PREVIEW_ROW_LIMIT)
 
 
 def _get_upload_mapping(upload_job_id: str, db: Session) -> Optional[UploadMapping]:
@@ -340,6 +352,36 @@ def _validate_mapping_request(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=f"Unknown canonical field: {mapping.canonical_field}",
             )
+
+
+def _missing_required_mapping_fields(
+    source_kind: str,
+    mappings: list[dict[str, str]],
+) -> list[str]:
+    mapped_fields = {mapping["canonical_field"] for mapping in mappings}
+    return [
+        field.name
+        for field in get_canonical_fields(source_kind)
+        if field.required and field.name not in mapped_fields
+    ]
+
+
+def _upload_has_normalization_records(upload_job_id: str, db: Session) -> bool:
+    statement = (
+        select(UploadNormalizationRecord.id)
+        .where(UploadNormalizationRecord.upload_job_id == upload_job_id)
+        .limit(1)
+    )
+    return db.scalar(statement) is not None
+
+
+def _mapping_updates_locked(upload_job: UploadJob) -> bool:
+    return upload_job.status in {
+        UPLOAD_STATUS_NORMALIZATION_QUEUED,
+        UPLOAD_STATUS_NORMALIZING,
+        UPLOAD_STATUS_NORMALIZED,
+        UPLOAD_STATUS_NORMALIZED_WITH_ERRORS,
+    }
 
 
 @router.post("", response_model=UploadJobRead, status_code=status.HTTP_201_CREATED)
@@ -496,6 +538,11 @@ def save_upload_mapping(
     db: Annotated[Session, Depends(get_db)],
 ) -> UploadMappingRead:
     upload_job = _get_upload_job_or_404(upload_id, db)
+    if _mapping_updates_locked(upload_job):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Upload mapping cannot be changed after normalization has started.",
+        )
     preview = _load_upload_preview(upload_job)
     _validate_mapping_request(request, preview)
 
@@ -519,6 +566,13 @@ def save_upload_mapping(
         upload_mapping.column_mappings_json = mapping_payload
 
     upload_job.source_kind = request.source_kind
+    upload_job.status = UPLOAD_STATUS_MAPPED
+    upload_job.normalization_task_id = None
+    upload_job.normalized_row_count = 0
+    upload_job.normalization_error_count = 0
+    upload_job.normalization_started_at = None
+    upload_job.normalization_completed_at = None
+    upload_job.last_error = None
 
     try:
         db.commit()
@@ -531,3 +585,139 @@ def save_upload_mapping(
 
     db.refresh(upload_mapping)
     return _build_upload_mapping_read(upload_mapping)
+
+
+@router.post("/{upload_id}/normalize", response_model=UploadJobRead)
+def trigger_upload_normalization(
+    upload_id: str,
+    db: Annotated[Session, Depends(get_db)],
+) -> UploadJob:
+    upload_job = _get_upload_job_or_404(upload_id, db)
+    if upload_job.status in {
+        UPLOAD_STATUS_NORMALIZATION_QUEUED,
+        UPLOAD_STATUS_NORMALIZING,
+    }:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Normalization is already in progress for this upload.",
+        )
+
+    if upload_job.status in {
+        UPLOAD_STATUS_NORMALIZED,
+        UPLOAD_STATUS_NORMALIZED_WITH_ERRORS,
+    } or _upload_has_normalization_records(upload_job.id, db):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Upload has already been normalized. Create a new upload to rerun it.",
+        )
+
+    upload_mapping = _get_upload_mapping(upload_job.id, db)
+    if upload_mapping is None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Upload mapping is required before normalization.",
+        )
+
+    missing_fields = _missing_required_mapping_fields(
+        upload_mapping.source_kind,
+        upload_mapping.column_mappings_json,
+    )
+    if missing_fields:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                "Missing required mappings for normalization: "
+                + ", ".join(sorted(missing_fields))
+            ),
+        )
+
+    task_id = generate_uuid()
+    upload_job.status = UPLOAD_STATUS_NORMALIZATION_QUEUED
+    upload_job.normalization_task_id = task_id
+    upload_job.normalized_row_count = 0
+    upload_job.normalization_error_count = 0
+    upload_job.normalization_started_at = None
+    upload_job.normalization_completed_at = None
+    upload_job.last_error = None
+
+    try:
+        db.commit()
+        normalize_upload_task.apply_async(args=[upload_job.id], task_id=task_id)
+    except Exception as exc:
+        db.rollback()
+        upload_job = _get_upload_job_or_404(upload_id, db)
+        upload_job.status = UPLOAD_STATUS_MAPPED
+        upload_job.normalization_task_id = None
+        upload_job.last_error = "Failed to dispatch normalization task."
+        db.commit()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to dispatch normalization task.",
+        ) from exc
+
+    db.expire_all()
+    return _get_upload_job_or_404(upload_id, db)
+
+
+@router.get(
+    "/{upload_id}/normalization-errors",
+    response_model=list[UploadNormalizationErrorRead],
+)
+def list_upload_normalization_errors(
+    upload_id: str,
+    db: Annotated[Session, Depends(get_db)],
+) -> list[UploadNormalizationErrorRead]:
+    _get_upload_job_or_404(upload_id, db)
+    statement = (
+        select(UploadNormalizationError)
+        .where(UploadNormalizationError.upload_job_id == upload_id)
+        .order_by(
+            UploadNormalizationError.row_number.asc(),
+            UploadNormalizationError.created_at.asc(),
+        )
+    )
+    return [
+        UploadNormalizationErrorRead(
+            id=error.id,
+            upload_job_id=error.upload_job_id,
+            source_kind=error.source_kind,
+            row_number=error.row_number,
+            raw_row_ref=error.raw_row_ref,
+            error_message=error.error_message,
+            row_data={key: str(value) for key, value in error.row_data_json.items()},
+            created_at=error.created_at,
+        )
+        for error in db.scalars(statement)
+    ]
+
+
+@router.get(
+    "/{upload_id}/normalization-records",
+    response_model=list[UploadNormalizationRecordRead],
+)
+def list_upload_normalization_records(
+    upload_id: str,
+    db: Annotated[Session, Depends(get_db)],
+) -> list[UploadNormalizationRecordRead]:
+    _get_upload_job_or_404(upload_id, db)
+    statement = (
+        select(UploadNormalizationRecord)
+        .where(UploadNormalizationRecord.upload_job_id == upload_id)
+        .order_by(
+            UploadNormalizationRecord.row_number.asc(),
+            UploadNormalizationRecord.created_at.asc(),
+        )
+    )
+    return [
+        UploadNormalizationRecordRead(
+            id=record.id,
+            upload_job_id=record.upload_job_id,
+            source_kind=record.source_kind,
+            row_number=record.row_number,
+            raw_row_ref=record.raw_row_ref,
+            canonical_table=record.canonical_table,
+            canonical_record_id=record.canonical_record_id,
+            created_at=record.created_at,
+        )
+        for record in db.scalars(statement)
+    ]

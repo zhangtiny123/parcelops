@@ -23,7 +23,9 @@ class FilePreview:
 
 
 def load_file_preview(
-    file_path: Path, file_type: str, row_limit: int = PREVIEW_ROW_LIMIT
+    file_path: Path,
+    file_type: str,
+    row_limit: int | None = PREVIEW_ROW_LIMIT,
 ) -> FilePreview:
     if file_type == "csv":
         return _load_csv_preview(file_path, row_limit)
@@ -32,7 +34,7 @@ def load_file_preview(
     raise ValueError(f"Unsupported preview file type: {file_type}")
 
 
-def _load_csv_preview(file_path: Path, row_limit: int) -> FilePreview:
+def _load_csv_preview(file_path: Path, row_limit: int | None) -> FilePreview:
     raw_text = file_path.read_text(encoding="utf-8-sig")
     sample = raw_text[:4096]
     try:
@@ -45,13 +47,13 @@ def _load_csv_preview(file_path: Path, row_limit: int) -> FilePreview:
     rows: list[dict[str, str]] = []
     for row in reader:
         rows.append({column: _stringify_cell(row.get(column)) for column in columns})
-        if len(rows) >= row_limit:
+        if row_limit is not None and len(rows) >= row_limit:
             break
 
     return FilePreview(columns=columns, rows=rows)
 
 
-def _load_xlsx_preview(file_path: Path, row_limit: int) -> FilePreview:
+def _load_xlsx_preview(file_path: Path, row_limit: int | None) -> FilePreview:
     with ZipFile(file_path) as workbook:
         shared_strings = _read_shared_strings(workbook)
         sheet_path = _resolve_first_sheet_path(workbook)
@@ -67,7 +69,12 @@ def _load_xlsx_preview(file_path: Path, row_limit: int) -> FilePreview:
     ]
 
     preview_rows: list[dict[str, str]] = []
-    for row in rows[1 : row_limit + 1]:
+    if row_limit is None:
+        data_rows = rows[1:]
+    else:
+        data_rows = rows[1 : row_limit + 1]
+
+    for row in data_rows:
         preview_rows.append(
             {
                 columns[index]: _stringify_cell(row.get(index))

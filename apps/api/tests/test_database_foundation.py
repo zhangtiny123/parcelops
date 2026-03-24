@@ -17,6 +17,8 @@ EXPECTED_TABLES = {
     "shipment_events",
     "shipments",
     "upload_mappings",
+    "upload_normalization_errors",
+    "upload_normalization_records",
     "three_pl_invoice_lines",
     "upload_jobs",
 }

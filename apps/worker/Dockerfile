@@ -6,9 +6,14 @@ ENV PIP_NO_CACHE_DIR=1
 
 WORKDIR /app
 
-COPY requirements.txt ./
-RUN pip install -r requirements.txt
+COPY apps/api/requirements.txt /app/apps/api/requirements.txt
+COPY apps/worker/requirements.txt /app/apps/worker/requirements.txt
+RUN pip install -r /app/apps/worker/requirements.txt
 
-COPY . .
+COPY apps/api /app/apps/api
+COPY apps/worker /app/apps/worker
+
+WORKDIR /app/apps/worker
+ENV PYTHONPATH=/app/apps/api:/app/apps/worker
 
 CMD ["celery", "-A", "worker_app", "worker", "--loglevel=INFO"]
