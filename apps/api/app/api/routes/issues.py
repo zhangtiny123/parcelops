@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal
 from typing_extensions import Annotated, Optional
 
@@ -11,6 +11,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db
+from app.issue_dashboard import get_issue_dashboard_summary, list_high_severity_issues
 from app.models.recovery import RecoveryIssue
 from app.recovery_issue_detection import run_issue_detection
 
@@ -42,6 +43,32 @@ class RecoveryIssueDetectionRead(BaseModel):
     deleted_duplicate_count: int
     total_issue_count: int
     counts_by_issue_type: dict[str, int]
+
+
+class RecoveryIssueTypeMetricRead(BaseModel):
+    issue_type: str
+    count: int
+    estimated_recoverable_amount: Decimal
+
+
+class RecoveryIssueProviderMetricRead(BaseModel):
+    provider_name: str
+    count: int
+    estimated_recoverable_amount: Decimal
+
+
+class RecoveryIssueTrendPointRead(BaseModel):
+    date: date
+    count: int
+    estimated_recoverable_amount: Decimal
+
+
+class RecoveryIssueDashboardRead(BaseModel):
+    total_issue_count: int
+    total_recoverable_amount: Decimal
+    issues_by_type: list[RecoveryIssueTypeMetricRead]
+    issues_by_provider: list[RecoveryIssueProviderMetricRead]
+    trend: list[RecoveryIssueTrendPointRead]
 
 
 def _apply_issue_filters(
@@ -98,6 +125,50 @@ def trigger_issue_detection(
         total_issue_count=detection_result.total_issue_count,
         counts_by_issue_type=detection_result.counts_by_issue_type,
     )
+
+
+@router.get("/dashboard", response_model=RecoveryIssueDashboardRead)
+def read_issue_dashboard(
+    db: Annotated[Session, Depends(get_db)],
+    days: Annotated[int, Query(ge=1, le=365)] = 30,
+) -> RecoveryIssueDashboardRead:
+    dashboard = get_issue_dashboard_summary(db, trend_days=days)
+    return RecoveryIssueDashboardRead(
+        total_issue_count=dashboard.total_issue_count,
+        total_recoverable_amount=dashboard.total_recoverable_amount,
+        issues_by_type=[
+            RecoveryIssueTypeMetricRead(
+                issue_type=metric.name,
+                count=metric.count,
+                estimated_recoverable_amount=metric.estimated_recoverable_amount,
+            )
+            for metric in dashboard.issues_by_type
+        ],
+        issues_by_provider=[
+            RecoveryIssueProviderMetricRead(
+                provider_name=metric.name,
+                count=metric.count,
+                estimated_recoverable_amount=metric.estimated_recoverable_amount,
+            )
+            for metric in dashboard.issues_by_provider
+        ],
+        trend=[
+            RecoveryIssueTrendPointRead(
+                date=point.date,
+                count=point.count,
+                estimated_recoverable_amount=point.estimated_recoverable_amount,
+            )
+            for point in dashboard.trend
+        ],
+    )
+
+
+@router.get("/high-severity", response_model=list[RecoveryIssueRead])
+def list_top_high_severity_issues(
+    db: Annotated[Session, Depends(get_db)],
+    limit: Annotated[int, Query(ge=1, le=50)] = 5,
+) -> list[RecoveryIssue]:
+    return list_high_severity_issues(db, limit=limit)
 
 
 @router.get("", response_model=list[RecoveryIssueRead])

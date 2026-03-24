@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import csv
 import importlib
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 from pathlib import Path
 import sys
@@ -190,6 +190,19 @@ def _seed_canonical_demo_data(database_url: str, dataset_dir: Path) -> None:
         engine.dispose()
 
 
+def _seed_recovery_issues(
+    database_url: str,
+    issues: list[RecoveryIssue],
+) -> None:
+    engine = create_engine(database_url)
+    try:
+        with Session(engine) as session:
+            session.add_all(issues)
+            session.commit()
+    finally:
+        engine.dispose()
+
+
 def test_issue_detection_detects_seeded_demo_anomalies_and_is_idempotent(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -338,3 +351,282 @@ def test_issue_list_supports_basic_filters(
     shipment_issues = shipment_response.json()
     assert len(shipment_issues) == 1
     assert shipment_issues[0]["shipment_id"] == "ship-2"
+
+
+def test_issue_dashboard_returns_aggregate_metrics_and_zero_filled_trend(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    database_url = _configure_test_environment(
+        tmp_path,
+        monkeypatch,
+        database_name="issue-dashboard.db",
+    )
+    now = datetime.now(timezone.utc).replace(hour=12, minute=0, second=0, microsecond=0)
+    start_day = now.date() - timedelta(days=3)
+
+    _seed_recovery_issues(
+        database_url,
+        [
+            RecoveryIssue(
+                issue_type="duplicate_charge",
+                provider_name="UPS",
+                severity="high",
+                status="open",
+                confidence=Decimal("0.9950"),
+                estimated_recoverable_amount=Decimal("14.10"),
+                shipment_id="ship-1",
+                parcel_invoice_line_id="parcel-1",
+                three_pl_invoice_line_id=None,
+                summary="Largest duplicate UPS charge.",
+                evidence_json={"tracking_number": "1Z123"},
+                detected_at=now - timedelta(days=3),
+            ),
+            RecoveryIssue(
+                issue_type="zone_mismatch",
+                provider_name="FedEx",
+                severity="medium",
+                status="open",
+                confidence=Decimal("0.9700"),
+                estimated_recoverable_amount=Decimal("8.25"),
+                shipment_id="ship-2",
+                parcel_invoice_line_id="parcel-2",
+                three_pl_invoice_line_id=None,
+                summary="FedEx zone mismatch.",
+                evidence_json={"tracking_number": "790000000001"},
+                detected_at=now - timedelta(days=1),
+            ),
+            RecoveryIssue(
+                issue_type="duplicate_charge",
+                provider_name="UPS",
+                severity="high",
+                status="resolved",
+                confidence=Decimal("0.9800"),
+                estimated_recoverable_amount=Decimal("5.00"),
+                shipment_id="ship-3",
+                parcel_invoice_line_id="parcel-3",
+                three_pl_invoice_line_id=None,
+                summary="Second duplicate UPS charge.",
+                evidence_json={"tracking_number": "1Z124"},
+                detected_at=now - timedelta(days=1),
+            ),
+            RecoveryIssue(
+                issue_type="incorrect_unit_rate_vs_rate_card",
+                provider_name="FlexFulfill 3PL",
+                severity="high",
+                status="open",
+                confidence=Decimal("0.9300"),
+                estimated_recoverable_amount=None,
+                shipment_id=None,
+                parcel_invoice_line_id=None,
+                three_pl_invoice_line_id="tpl-1",
+                summary="3PL rate mismatch without a recoverable amount estimate.",
+                evidence_json={"invoice_number": "3PL-1"},
+                detected_at=now,
+            ),
+        ],
+    )
+
+    with TestClient(create_app()) as client:
+        response = client.get("/issues/dashboard", params={"days": 4})
+
+    assert response.status_code == 200
+    dashboard = response.json()
+    assert dashboard["total_issue_count"] == 4
+    assert dashboard["total_recoverable_amount"] == "27.35"
+    assert dashboard["issues_by_type"] == [
+        {
+            "issue_type": "duplicate_charge",
+            "count": 2,
+            "estimated_recoverable_amount": "19.10",
+        },
+        {
+            "issue_type": "incorrect_unit_rate_vs_rate_card",
+            "count": 1,
+            "estimated_recoverable_amount": "0.00",
+        },
+        {
+            "issue_type": "zone_mismatch",
+            "count": 1,
+            "estimated_recoverable_amount": "8.25",
+        },
+    ]
+    assert dashboard["issues_by_provider"] == [
+        {
+            "provider_name": "UPS",
+            "count": 2,
+            "estimated_recoverable_amount": "19.10",
+        },
+        {
+            "provider_name": "FedEx",
+            "count": 1,
+            "estimated_recoverable_amount": "8.25",
+        },
+        {
+            "provider_name": "FlexFulfill 3PL",
+            "count": 1,
+            "estimated_recoverable_amount": "0.00",
+        },
+    ]
+    assert dashboard["trend"] == [
+        {
+            "date": start_day.isoformat(),
+            "count": 1,
+            "estimated_recoverable_amount": "14.10",
+        },
+        {
+            "date": (start_day + timedelta(days=1)).isoformat(),
+            "count": 0,
+            "estimated_recoverable_amount": "0.00",
+        },
+        {
+            "date": (start_day + timedelta(days=2)).isoformat(),
+            "count": 2,
+            "estimated_recoverable_amount": "13.25",
+        },
+        {
+            "date": now.date().isoformat(),
+            "count": 1,
+            "estimated_recoverable_amount": "0.00",
+        },
+    ]
+
+
+def test_issue_dashboard_returns_empty_state_when_no_issues(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _configure_test_environment(
+        tmp_path,
+        monkeypatch,
+        database_name="issue-dashboard-empty.db",
+    )
+    today = datetime.now(timezone.utc).date()
+
+    with TestClient(create_app()) as client:
+        response = client.get("/issues/dashboard", params={"days": 3})
+
+    assert response.status_code == 200
+    dashboard = response.json()
+    assert dashboard["total_issue_count"] == 0
+    assert dashboard["total_recoverable_amount"] == "0.00"
+    assert dashboard["issues_by_type"] == []
+    assert dashboard["issues_by_provider"] == []
+    assert dashboard["trend"] == [
+        {
+            "date": (today - timedelta(days=2)).isoformat(),
+            "count": 0,
+            "estimated_recoverable_amount": "0.00",
+        },
+        {
+            "date": (today - timedelta(days=1)).isoformat(),
+            "count": 0,
+            "estimated_recoverable_amount": "0.00",
+        },
+        {
+            "date": today.isoformat(),
+            "count": 0,
+            "estimated_recoverable_amount": "0.00",
+        },
+    ]
+
+
+def test_high_severity_endpoint_returns_top_recoverable_issues(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    database_url = _configure_test_environment(
+        tmp_path,
+        monkeypatch,
+        database_name="high-severity-issues.db",
+    )
+    now = datetime.now(timezone.utc).replace(hour=9, minute=0, second=0, microsecond=0)
+
+    _seed_recovery_issues(
+        database_url,
+        [
+            RecoveryIssue(
+                issue_type="duplicate_charge",
+                provider_name="UPS",
+                severity="high",
+                status="open",
+                confidence=Decimal("0.9500"),
+                estimated_recoverable_amount=Decimal("25.00"),
+                shipment_id="ship-1",
+                parcel_invoice_line_id="parcel-1",
+                three_pl_invoice_line_id=None,
+                summary="Largest recoverable UPS charge.",
+                evidence_json={"tracking_number": "1Z111"},
+                detected_at=now - timedelta(hours=3),
+            ),
+            RecoveryIssue(
+                issue_type="zone_mismatch",
+                provider_name="UPS",
+                severity="high",
+                status="open",
+                confidence=Decimal("0.9000"),
+                estimated_recoverable_amount=Decimal("25.00"),
+                shipment_id="ship-2",
+                parcel_invoice_line_id="parcel-2",
+                three_pl_invoice_line_id=None,
+                summary="Second-highest UPS charge.",
+                evidence_json={"tracking_number": "1Z112"},
+                detected_at=now - timedelta(hours=1),
+            ),
+            RecoveryIssue(
+                issue_type="incorrect_unit_rate_vs_rate_card",
+                provider_name="FedEx",
+                severity="high",
+                status="open",
+                confidence=Decimal("0.9900"),
+                estimated_recoverable_amount=Decimal("5.00"),
+                shipment_id="ship-3",
+                parcel_invoice_line_id="parcel-3",
+                three_pl_invoice_line_id=None,
+                summary="Smaller FedEx charge.",
+                evidence_json={"tracking_number": "790000000002"},
+                detected_at=now,
+            ),
+            RecoveryIssue(
+                issue_type="invoice_line_without_matched_order_or_shipment",
+                provider_name="FlexFulfill 3PL",
+                severity="high",
+                status="open",
+                confidence=Decimal("0.9950"),
+                estimated_recoverable_amount=None,
+                shipment_id=None,
+                parcel_invoice_line_id=None,
+                three_pl_invoice_line_id="tpl-9",
+                summary="High-severity issue without a recoverable amount estimate.",
+                evidence_json={"invoice_number": "3PL-9"},
+                detected_at=now,
+            ),
+            RecoveryIssue(
+                issue_type="duplicate_charge",
+                provider_name="FedEx",
+                severity="medium",
+                status="open",
+                confidence=Decimal("0.9950"),
+                estimated_recoverable_amount=Decimal("99.00"),
+                shipment_id="ship-4",
+                parcel_invoice_line_id="parcel-4",
+                three_pl_invoice_line_id=None,
+                summary="Medium-severity issue that should be excluded.",
+                evidence_json={"tracking_number": "790000000003"},
+                detected_at=now,
+            ),
+        ],
+    )
+
+    with TestClient(create_app()) as client:
+        response = client.get("/issues/high-severity", params={"limit": 3})
+
+    assert response.status_code == 200
+    issues = response.json()
+    assert len(issues) == 3
+    assert [issue["summary"] for issue in issues] == [
+        "Largest recoverable UPS charge.",
+        "Second-highest UPS charge.",
+        "Smaller FedEx charge.",
+    ]
+    assert {issue["severity"] for issue in issues} == {"high"}
