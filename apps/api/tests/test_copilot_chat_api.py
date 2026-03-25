@@ -227,6 +227,102 @@ def test_copilot_chat_returns_dashboard_metrics(
     assert "UPS" in payload["message"]
 
 
+def test_copilot_chat_counts_recovery_issues_without_listing_top_matches(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    database_url = _configure_test_environment(
+        tmp_path,
+        monkeypatch,
+        database_name="copilot-issue-count.db",
+    )
+    _seed_copilot_records(database_url)
+
+    with TestClient(create_app()) as client:
+        response = client.post(
+            "/copilot/chat",
+            json={
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": "How many recovery issues do we have?",
+                    }
+                ]
+            },
+        )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["tool_calls"][0]["name"] == "search_issues"
+    assert payload["tool_calls"][0]["arguments"]["intent"] == "count"
+    assert payload["message"] == "ParcelOps currently has 3 recovery issue(s)."
+    assert payload["references"] == []
+
+
+def test_copilot_chat_counts_shipment_records(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    database_url = _configure_test_environment(
+        tmp_path,
+        monkeypatch,
+        database_name="copilot-shipment-count.db",
+    )
+    _seed_copilot_records(database_url)
+
+    with TestClient(create_app()) as client:
+        response = client.post(
+            "/copilot/chat",
+            json={
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": "How many shipment records do we have?",
+                    }
+                ]
+            },
+        )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["tool_calls"][0]["name"] == "search_shipments"
+    assert payload["tool_calls"][0]["arguments"]["intent"] == "count"
+    assert payload["message"] == "ParcelOps currently has 1 shipment record(s)."
+    assert payload["references"] == []
+
+
+def test_copilot_chat_formats_high_confidence_issue_questions_distinctly(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    database_url = _configure_test_environment(
+        tmp_path,
+        monkeypatch,
+        database_name="copilot-high-confidence.db",
+    )
+    _seed_copilot_records(database_url)
+
+    with TestClient(create_app()) as client:
+        response = client.post(
+            "/copilot/chat",
+            json={
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": "Show the billing errors with the strongest confidence and the evidence behind them.",
+                    }
+                ]
+            },
+        )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["tool_calls"][0]["name"] == "search_issues"
+    assert payload["tool_calls"][0]["arguments"]["intent"] == "high_confidence"
+    assert "high-confidence recovery issue(s)" in payload["message"]
+    assert payload["references"][0]["id"] == "issue-1"
+
+
 def test_copilot_chat_looks_up_shipments_by_tracking_number(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

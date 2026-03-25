@@ -48,6 +48,10 @@ class CopilotToolbox:
                 description="Lookup a shipment by shipment id, external shipment id, or tracking number.",
             ),
             ToolDefinition(
+                name="search_shipments",
+                description="Search shipment records and return counts or recent matching shipments.",
+            ),
+            ToolDefinition(
                 name="create_case_draft",
                 description="Build a recovery case draft preview from one or more issue ids without persisting it.",
             ),
@@ -114,30 +118,48 @@ class CopilotToolbox:
 
     def _tool_search_issues(self, arguments: dict[str, object]) -> ToolExecutionResult:
         statement = select(RecoveryIssue)
+        count_statement = select(func.count(RecoveryIssue.id))
         status_value = _coerce_optional_str(arguments.get("status"))
         severity = _coerce_optional_str(arguments.get("severity"))
         provider_name = _coerce_optional_str(arguments.get("provider_name"))
         issue_type = _coerce_optional_str(arguments.get("issue_type"))
         shipment_id = _coerce_optional_str(arguments.get("shipment_id"))
         min_confidence = _coerce_decimal(arguments.get("min_confidence"))
+        intent = _coerce_optional_str(arguments.get("intent")) or "search"
         query = _coerce_optional_str(arguments.get("query"))
         limit = _coerce_int(arguments.get("limit"), default=5, minimum=1, maximum=20)
         sort_by = _coerce_optional_str(arguments.get("sort_by")) or "detected_at_desc"
 
         if status_value is not None:
             statement = statement.where(RecoveryIssue.status == status_value)
+            count_statement = count_statement.where(
+                RecoveryIssue.status == status_value
+            )
         if severity is not None:
             statement = statement.where(RecoveryIssue.severity == severity)
+            count_statement = count_statement.where(RecoveryIssue.severity == severity)
         if provider_name is not None:
             statement = statement.where(
                 func.lower(RecoveryIssue.provider_name) == provider_name.lower()
             )
+            count_statement = count_statement.where(
+                func.lower(RecoveryIssue.provider_name) == provider_name.lower()
+            )
         if issue_type is not None:
             statement = statement.where(RecoveryIssue.issue_type == issue_type)
+            count_statement = count_statement.where(
+                RecoveryIssue.issue_type == issue_type
+            )
         if shipment_id is not None:
             statement = statement.where(RecoveryIssue.shipment_id == shipment_id)
+            count_statement = count_statement.where(
+                RecoveryIssue.shipment_id == shipment_id
+            )
         if min_confidence is not None:
             statement = statement.where(RecoveryIssue.confidence >= min_confidence)
+            count_statement = count_statement.where(
+                RecoveryIssue.confidence >= min_confidence
+            )
         if query is not None:
             query_terms = _search_terms(query)
             if query_terms:
@@ -152,6 +174,7 @@ class CopilotToolbox:
                         ]
                     )
                 statement = statement.where(or_(*predicates))
+                count_statement = count_statement.where(or_(*predicates))
 
         amount_missing_rank = case(
             (RecoveryIssue.estimated_recoverable_amount.is_(None), 1),
@@ -185,10 +208,12 @@ class CopilotToolbox:
                 RecoveryIssue.id.desc(),
             )
 
+        total_count = int(self.db.scalar(count_statement) or 0)
         issues = list(self.db.scalars(statement.limit(limit)))
         return ToolExecutionResult(
             name="search_issues",
             arguments={
+                "intent": intent,
                 "status": status_value,
                 "severity": severity,
                 "provider_name": provider_name,
@@ -201,12 +226,96 @@ class CopilotToolbox:
             },
             output={
                 "result_count": len(issues),
+                "total_count": total_count,
                 "issues": [
                     self._serialize_issue(issue, include_evidence=True)
                     for issue in issues
                 ],
             },
-            references=[self._issue_reference(issue) for issue in issues],
+            references=(
+                []
+                if intent == "count"
+                else [self._issue_reference(issue) for issue in issues]
+            ),
+        )
+
+    def _tool_search_shipments(
+        self,
+        arguments: dict[str, object],
+    ) -> ToolExecutionResult:
+        statement = select(Shipment)
+        count_statement = select(func.count(Shipment.id))
+        carrier = _coerce_optional_str(arguments.get("carrier"))
+        intent = _coerce_optional_str(arguments.get("intent")) or "search"
+        query = _coerce_optional_str(arguments.get("query"))
+        limit = _coerce_int(arguments.get("limit"), default=5, minimum=1, maximum=20)
+
+        if carrier is not None:
+            statement = statement.where(func.lower(Shipment.carrier) == carrier.lower())
+            count_statement = count_statement.where(
+                func.lower(Shipment.carrier) == carrier.lower()
+            )
+
+        if query is not None:
+            query_terms = _search_terms(query)
+            if query_terms:
+                predicates = []
+                for term in query_terms:
+                    pattern = f"%{term}%"
+                    predicates.extend(
+                        [
+                            func.lower(Shipment.id).like(pattern),
+                            func.lower(Shipment.external_shipment_id).like(pattern),
+                            func.lower(Shipment.tracking_number).like(pattern),
+                            func.lower(Shipment.carrier).like(pattern),
+                        ]
+                    )
+                statement = statement.where(or_(*predicates))
+                count_statement = count_statement.where(or_(*predicates))
+
+        statement = statement.order_by(Shipment.shipped_at.desc(), Shipment.id.desc())
+
+        total_count = int(self.db.scalar(count_statement) or 0)
+        shipments = list(self.db.scalars(statement.limit(limit)))
+
+        references = []
+        if intent != "count":
+            references = [
+                Reference(
+                    kind="shipment",
+                    id=shipment.id,
+                    label=f"Shipment {shipment.id}",
+                    detail=shipment.tracking_number,
+                )
+                for shipment in shipments
+            ]
+
+        return ToolExecutionResult(
+            name="search_shipments",
+            arguments={
+                "carrier": carrier,
+                "intent": intent,
+                "limit": limit,
+                "query": query,
+            },
+            output={
+                "result_count": len(shipments),
+                "shipments": [
+                    {
+                        "id": shipment.id,
+                        "external_shipment_id": shipment.external_shipment_id,
+                        "tracking_number": shipment.tracking_number,
+                        "carrier": shipment.carrier,
+                        "service_level": shipment.service_level,
+                        "warehouse_id": shipment.warehouse_id,
+                        "shipped_at": shipment.shipped_at,
+                        "delivered_at": shipment.delivered_at,
+                    }
+                    for shipment in shipments
+                ],
+                "total_count": total_count,
+            },
+            references=references,
         )
 
     def _tool_get_issue_detail(

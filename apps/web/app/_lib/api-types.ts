@@ -28,6 +28,46 @@ export type ApiHealth = {
   storage_root: string;
 };
 
+export type CopilotChatMessage = {
+  content: string;
+  role: "assistant" | "system" | "user";
+};
+
+export type CopilotUsage = {
+  completion_tokens: number | null;
+  estimated_cost_usd: NumericValue | null;
+  prompt_tokens: number | null;
+  total_tokens: number | null;
+};
+
+export type CopilotReference = {
+  detail: string | null;
+  id: string;
+  kind: string;
+  label: string;
+};
+
+export type CopilotToolCall = {
+  arguments: Record<string, unknown>;
+  name: string;
+};
+
+export type CopilotChatRequest = {
+  messages: CopilotChatMessage[];
+};
+
+export type CopilotChatResponse = {
+  latency_ms: number;
+  message: string;
+  model_name: string;
+  provider_name: string;
+  references: CopilotReference[];
+  status: string;
+  tool_calls: CopilotToolCall[];
+  trace_id: string;
+  usage: CopilotUsage | null;
+};
+
 export type UploadJob = {
   file_size_bytes: number;
   file_type: string;

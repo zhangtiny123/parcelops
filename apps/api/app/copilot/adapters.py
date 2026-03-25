@@ -69,6 +69,7 @@ class HeuristicToolCallingAdapter(LLMAdapter):
 
         question = user_message.content.strip()
         lowered = question.lower()
+        count_question = _looks_like_count_question(lowered)
         issue_ids = _extract_issue_ids(question)
         limit = _extract_limit(lowered)
         provider_name = _extract_provider_name(question)
@@ -110,6 +111,21 @@ class HeuristicToolCallingAdapter(LLMAdapter):
             )
 
         shipment_identifier = _extract_shipment_identifier(question)
+        if _looks_like_shipment_search(lowered, shipment_identifier):
+            return AdapterPlan(
+                status="completed",
+                tool_calls=[
+                    ToolCallRequest(
+                        name="search_shipments",
+                        arguments={
+                            "carrier": provider_name,
+                            "intent": "count" if count_question else "search",
+                            "limit": limit,
+                        },
+                    )
+                ],
+            )
+
         if _looks_like_shipment_lookup(lowered, shipment_identifier):
             if shipment_identifier is None:
                 return AdapterPlan(
@@ -130,11 +146,15 @@ class HeuristicToolCallingAdapter(LLMAdapter):
 
         if _looks_like_issue_search(lowered):
             sort_by = "detected_at_desc"
+            intent = "count" if count_question else "search"
             min_confidence = None
             if _looks_like_top_recovery_question(lowered):
+                intent = "top_recovery"
                 sort_by = "recoverable_amount_desc"
                 status_value = status_value or "open"
-            elif _looks_like_high_confidence_question(lowered):
+            if _looks_like_high_confidence_question(lowered):
+                if not count_question:
+                    intent = "high_confidence"
                 sort_by = "confidence_desc"
                 status_value = status_value or "open"
                 min_confidence = "0.80"
@@ -145,6 +165,7 @@ class HeuristicToolCallingAdapter(LLMAdapter):
                     ToolCallRequest(
                         name="search_issues",
                         arguments={
+                            "intent": intent,
                             "status": status_value,
                             "severity": severity,
                             "provider_name": provider_name,
@@ -203,11 +224,13 @@ class HeuristicToolCallingAdapter(LLMAdapter):
         if tool_result.name == "get_dashboard_metrics":
             return self._format_dashboard(tool_result.output)
         if tool_result.name == "search_issues":
-            return self._format_issue_search(tool_result.output)
+            return self._format_issue_search(tool_result)
         if tool_result.name == "get_issue_detail":
             return self._format_issue_detail(tool_result.output)
         if tool_result.name == "lookup_shipment":
             return self._format_shipment_lookup(tool_result.output)
+        if tool_result.name == "search_shipments":
+            return self._format_shipment_search(tool_result)
         if tool_result.name == "create_case_draft":
             return self._format_case_draft(tool_result.output)
         raise ValueError(f"Unsupported tool result formatter: {tool_result.name}")
@@ -272,10 +295,19 @@ class HeuristicToolCallingAdapter(LLMAdapter):
 
         return " ".join(lines)
 
-    def _format_issue_search(self, output: dict[str, object]) -> str:
+    def _format_issue_search(self, tool_result: ToolExecutionResult) -> str:
+        arguments = tool_result.arguments
+        output = tool_result.output
+        intent = _read_str(arguments, "intent") or "search"
         issues = _read_dict_list(output, "issues")
-        if not issues:
+        total_count = _read_int(output, "total_count")
+        filter_suffix = _format_issue_filter_suffix(arguments)
+
+        if total_count == 0:
             return "I did not find any recovery issues that match that request."
+
+        if intent == "count":
+            return f"ParcelOps currently has {total_count} recovery issue(s){filter_suffix}."
 
         issue_lines = [
             (
@@ -285,8 +317,21 @@ class HeuristicToolCallingAdapter(LLMAdapter):
             )
             for issue in issues[:5]
         ]
+
+        if intent == "top_recovery":
+            return (
+                f"I found {total_count} matching recovery issue(s){filter_suffix}. "
+                "The highest recoverable matches are: " + " ".join(issue_lines)
+            )
+
+        if intent == "high_confidence":
+            return (
+                f"I found {total_count} high-confidence recovery issue(s){filter_suffix}. "
+                "The strongest matches are: " + " ".join(issue_lines)
+            )
+
         return (
-            f"I found {_read_int(output, 'result_count')} matching recovery issue(s). "
+            f"I found {total_count} matching recovery issue(s){filter_suffix}. "
             + " ".join(issue_lines)
         )
 
@@ -350,6 +395,33 @@ class HeuristicToolCallingAdapter(LLMAdapter):
 
         return " ".join(lines)
 
+    def _format_shipment_search(self, tool_result: ToolExecutionResult) -> str:
+        arguments = tool_result.arguments
+        output = tool_result.output
+        total_count = _read_int(output, "total_count")
+        intent = _read_str(arguments, "intent") or "search"
+        carrier = _read_str(arguments, "carrier")
+        carrier_suffix = f" for carrier {carrier}" if carrier else ""
+
+        if total_count == 0:
+            return f"I did not find any shipment records{carrier_suffix}."
+
+        if intent == "count":
+            return f"ParcelOps currently has {total_count} shipment record(s){carrier_suffix}."
+
+        shipments = _read_dict_list(output, "shipments")
+        shipment_lines = [
+            (
+                f"{_read_str(shipment, 'id')} tracking {_read_str(shipment, 'tracking_number')} "
+                f"with {_read_str(shipment, 'carrier')} {_read_str(shipment, 'service_level') or 'service'}"
+            )
+            for shipment in shipments[:5]
+        ]
+        return (
+            f"I found {total_count} shipment record(s){carrier_suffix}. "
+            "The latest matches are: " + "; ".join(shipment_lines) + "."
+        )
+
     def _format_case_draft(self, output: dict[str, object]) -> str:
         if not _read_bool(output, "created"):
             return "I could not build that recovery case draft safely. " + str(
@@ -406,7 +478,37 @@ def _looks_like_shipment_lookup(
 ) -> bool:
     if shipment_identifier is not None:
         return True
-    return "shipment" in lowered or "tracking" in lowered
+    markers = (
+        "look up shipment",
+        "lookup shipment",
+        "find shipment",
+        "show shipment",
+        "shipment detail",
+        "shipment details",
+        "tracking",
+    )
+    return any(marker in lowered for marker in markers)
+
+
+def _looks_like_shipment_search(
+    lowered: str,
+    shipment_identifier: Optional[str],
+) -> bool:
+    if shipment_identifier is not None:
+        return False
+
+    if "shipment" not in lowered and "shipments" not in lowered:
+        return False
+
+    markers = (
+        "shipment records",
+        "list shipments",
+        "show shipments",
+        "latest shipments",
+    )
+    return _looks_like_count_question(lowered) or any(
+        marker in lowered for marker in markers
+    )
 
 
 def _looks_like_dashboard_question(lowered: str) -> bool:
@@ -437,8 +539,24 @@ def _looks_like_issue_search(lowered: str) -> bool:
     return any(marker in lowered for marker in markers)
 
 
+def _looks_like_count_question(lowered: str) -> bool:
+    markers = (
+        "how many",
+        "count",
+        "number of",
+        "total ",
+    )
+    return any(marker in lowered for marker in markers)
+
+
 def _looks_like_high_confidence_question(lowered: str) -> bool:
-    return "high confidence" in lowered or "highest-confidence" in lowered
+    markers = (
+        "high confidence",
+        "highest-confidence",
+        "highest confidence",
+        "strongest confidence",
+    )
+    return any(marker in lowered for marker in markers)
 
 
 def _looks_like_top_recovery_question(lowered: str) -> bool:
@@ -527,7 +645,7 @@ def _extract_days(lowered: str) -> int:
 
 def _extract_shipment_identifier(text: str) -> Optional[str]:
     tracking_match = re.search(
-        r"\b(?:tracking(?: number)?|shipment(?: id)?)[:\s#-]*([A-Za-z0-9_-]{6,})\b",
+        r"\b(?:tracking(?: number)?|shipment id|external shipment id)[:\s#-]*([A-Za-z0-9_-]{6,})\b",
         text,
         flags=re.IGNORECASE,
     )
@@ -559,6 +677,39 @@ def _dedupe_references(references: list[Reference]) -> list[Reference]:
         seen_reference_keys.add(reference_key)
         deduped_references.append(reference)
     return deduped_references
+
+
+def _format_issue_filter_suffix(arguments: dict[str, object]) -> str:
+    filters: list[str] = []
+
+    status_value = _read_str(arguments, "status")
+    if status_value:
+        filters.append(f"status={status_value}")
+
+    severity = _read_str(arguments, "severity")
+    if severity:
+        filters.append(f"severity={severity}")
+
+    provider_name = _read_str(arguments, "provider_name")
+    if provider_name:
+        filters.append(f"provider={provider_name}")
+
+    issue_type = _read_str(arguments, "issue_type")
+    if issue_type:
+        filters.append(f"type={format_status_label(issue_type)}")
+
+    shipment_id = _read_str(arguments, "shipment_id")
+    if shipment_id:
+        filters.append(f"shipment={shipment_id}")
+
+    min_confidence = _read_str(arguments, "min_confidence")
+    if min_confidence:
+        filters.append(f"confidence>={min_confidence}")
+
+    if not filters:
+        return ""
+
+    return " (" + ", ".join(filters) + ")"
 
 
 def _read_bool(payload: dict[str, object], key: str) -> bool:
