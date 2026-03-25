@@ -57,8 +57,10 @@ code {
 
 .app-frame {
   min-height: 100vh;
+  height: 100vh;
   display: grid;
   grid-template-columns: 19.5rem minmax(0, 1fr);
+  overflow: hidden;
 }
 
 .sidebar {
@@ -68,6 +70,7 @@ code {
   align-content: start;
   gap: 1.5rem;
   min-height: 100vh;
+  overflow-y: auto;
   padding: 1.5rem;
   border-right: 1px solid rgba(255, 255, 255, 0.08);
   background:
@@ -206,14 +209,22 @@ code {
 
 .main-column {
   min-width: 0;
+  min-height: 100vh;
+  overflow-y: auto;
 }
 
 .topbar {
+  position: sticky;
+  top: 0;
+  z-index: 20;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 1rem;
   padding: 1.5rem 2rem 0;
+  background:
+    linear-gradient(180deg, rgba(239, 244, 243, 0.96) 0%, rgba(239, 244, 243, 0.88) 72%, rgba(239, 244, 243, 0) 100%);
+  backdrop-filter: blur(14px);
 }
 
 .topbar-label {
@@ -1274,14 +1285,27 @@ code {
 
 @media (max-width: 1080px) {
   .app-frame {
+    height: auto;
     grid-template-columns: 1fr;
+    overflow: visible;
   }
 
   .sidebar {
     position: static;
     min-height: auto;
+    overflow: visible;
     border-right: 0;
     border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  }
+
+  .main-column {
+    min-height: auto;
+    overflow: visible;
+  }
+
+  .topbar {
+    position: static;
+    backdrop-filter: none;
   }
 
   .detail-grid {
