@@ -5,6 +5,7 @@ export type ApiResult<T> =
   | { data: null; error: string; status: number | null };
 
 export type ApiMeta = {
+  cases_url: string;
   db_health_url: string;
   docs_url: string;
   health_url: string;
@@ -142,4 +143,55 @@ export type RecoveryIssueDashboard = {
   total_issue_count: number;
   total_recoverable_amount: NumericValue;
   trend: RecoveryIssueTrendPoint[];
+};
+
+export type RecoveryIssueDetection = {
+  counts_by_issue_type: Record<string, number>;
+  created_count: number;
+  deleted_duplicate_count: number;
+  total_issue_count: number;
+  unchanged_count: number;
+  updated_count: number;
+};
+
+export type RecoveryCaseStatus = "open" | "pending" | "resolved";
+
+export type RecoveryCaseLinkedIssue = {
+  detected_at: string;
+  estimated_recoverable_amount: NumericValue | null;
+  id: string;
+  issue_type: string;
+  provider_name: string;
+  severity: string;
+  status: string;
+  summary: string;
+};
+
+export type RecoveryCaseListItem = {
+  created_at: string;
+  draft_email: string | null;
+  draft_summary: string | null;
+  estimated_recoverable_amount: NumericValue;
+  id: string;
+  issue_count: number;
+  issue_ids: string[];
+  status: RecoveryCaseStatus;
+  title: string;
+  updated_at: string;
+};
+
+export type RecoveryCase = RecoveryCaseListItem & {
+  issues: RecoveryCaseLinkedIssue[];
+};
+
+export type RecoveryCaseCreateRequest = {
+  issue_ids: string[];
+  title?: string;
+};
+
+export type RecoveryCaseUpdateRequest = {
+  draft_email: string | null;
+  draft_summary: string | null;
+  status: RecoveryCaseStatus;
+  title: string;
 };

@@ -519,13 +519,20 @@ code {
 .field-group,
 .workflow-summary,
 .mapping-toolbar,
-.loading-preview {
+.loading-preview,
+.case-editor {
   display: grid;
   gap: 0.85rem;
 }
 
 .field-group {
   min-width: 0;
+}
+
+.case-editor-grid {
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: minmax(0, 2fr) minmax(14rem, 1fr);
 }
 
 .field-label {
@@ -560,6 +567,17 @@ code {
   min-height: 2.6rem;
   padding-top: 0.65rem;
   padding-bottom: 0.65rem;
+}
+
+.field-textarea {
+  min-height: 10rem;
+  resize: vertical;
+}
+
+.selection-checkbox {
+  width: 1rem;
+  height: 1rem;
+  accent-color: var(--accent);
 }
 
 .workflow-note {
@@ -1066,6 +1084,7 @@ code {
     grid-template-columns: 1fr;
   }
 
+  .case-editor-grid,
   .filter-grid,
   .evidence-grid {
     grid-template-columns: 1fr;

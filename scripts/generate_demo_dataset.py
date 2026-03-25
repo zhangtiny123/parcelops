@@ -665,7 +665,7 @@ def build_parcel_invoice_lines(
             )
             row_number += 1
 
-    anomalies = Counter[str]()
+    anomalies = Counter()
     duplicate_indices = (11, 37, 88, 143)
     billed_weight_indices = (21, 54, 102, 171)
     zone_mismatch_indices = (26, 76, 129)
@@ -814,7 +814,7 @@ def build_three_pl_invoice_lines(
             )
             row_number += 1
 
-    anomalies = Counter[str]()
+    anomalies = Counter()
     incorrect_rate_indices = (18, 96, 154)
 
     for index in incorrect_rate_indices:

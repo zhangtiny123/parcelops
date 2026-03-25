@@ -1,80 +1,176 @@
 import Link from "next/link";
 
 import { PageHeader } from "../../_components/page-header";
-import { EmptyState, MetricCard, SectionCard } from "../../_components/ui";
-import { getIssueDashboard } from "../../_lib/api";
-import { formatCurrency, formatNumber } from "../../_lib/format";
+import { EmptyState, MetricCard, SectionCard, StatusBadge } from "../../_components/ui";
+import { getIssueDashboard, listCases, makeApiUrl } from "../../_lib/api";
+import type { RecoveryCaseListItem, RecoveryCaseStatus } from "../../_lib/api-types";
+import { formatCurrency, formatDateTime, formatNumber, formatStatusLabel } from "../../_lib/format";
 
-export default async function CasesPage() {
-  const dashboardResult = await getIssueDashboard();
+type CasesPageProps = {
+  searchParams?: Record<string, string | string[] | undefined>;
+};
+
+function getSearchParamValue(value: string | string[] | undefined) {
+  return Array.isArray(value) ? value[0] : value;
+}
+
+function getCaseStatusCount(
+  cases: RecoveryCaseListItem[],
+  status: RecoveryCaseStatus,
+) {
+  return cases.filter((recoveryCase) => recoveryCase.status === status).length;
+}
+
+export default async function CasesPage({ searchParams }: CasesPageProps) {
+  const [dashboardResult, casesResult] = await Promise.all([
+    getIssueDashboard(),
+    listCases(),
+  ]);
+
+  const recoveryCases = casesResult.data ?? [];
+  const notice = getSearchParamValue(searchParams?.notice);
+  const error = getSearchParamValue(searchParams?.error);
 
   return (
     <div className="page-stack">
       <PageHeader
         eyebrow="Cases"
         title="Recovery case register"
-        description="Case storage and editing are still ahead, but the shell is ready to turn issue findings into a durable operations workflow."
+        description="Turn issue findings into dispute-ready recovery cases, keep editable operator drafts in one place, and track each case through open, pending, and resolved stages."
       >
         <div className="page-action-row">
           <Link className="button button-secondary" href="/issues">
-            Review issue queue
+            Create from issues
           </Link>
+          <a
+            className="button button-primary"
+            href={makeApiUrl("/cases")}
+            rel="noreferrer"
+            target="_blank"
+          >
+            Cases API
+          </a>
         </div>
       </PageHeader>
 
-      <section className="metric-grid" aria-label="Case readiness">
+      {notice ? (
+        <div className="inline-notice inline-notice--good" role="status">
+          {notice}
+        </div>
+      ) : null}
+
+      {error ? (
+        <div className="inline-notice inline-notice--danger" role="status">
+          {error}
+        </div>
+      ) : null}
+
+      <section className="metric-grid" aria-label="Case register metrics">
         <MetricCard
           detail={
-            dashboardResult.error
-              ? dashboardResult.error
-              : "Potential issue inputs that can later be grouped into cases."
+            casesResult.error
+              ? casesResult.error
+              : "Cases currently persisted in the recovery workflow."
           }
-          label="Eligible issues"
+          label="Stored cases"
           tone="accent"
           value={
-            dashboardResult.data
-              ? formatNumber(dashboardResult.data.total_issue_count)
-              : "Unavailable"
+            casesResult.data ? formatNumber(recoveryCases.length) : "Unavailable"
           }
         />
         <MetricCard
-          detail="Estimated recoverable value the future case workflow can package."
+          detail="Cases that still need operator action or outbound dispute work."
+          label="Open cases"
+          tone="warning"
+          value={formatNumber(getCaseStatusCount(recoveryCases, "open"))}
+        />
+        <MetricCard
+          detail="Cases waiting on review, carrier response, or follow-up."
+          label="Pending cases"
+          value={formatNumber(getCaseStatusCount(recoveryCases, "pending"))}
+        />
+        <MetricCard
+          detail="Cases already closed out in the recovery workflow."
+          label="Resolved cases"
           tone="good"
-          label="Recoverable value"
-          value={
-            dashboardResult.data
-              ? formatCurrency(dashboardResult.data.total_recoverable_amount)
-              : "Unavailable"
-          }
-        />
-        <MetricCard
-          detail="The backend case model and APIs land in Task 12."
-          label="Stored cases"
-          value="Pending"
-        />
-        <MetricCard
-          detail="Navigation is already in place so operators have a stable destination."
-          label="Workflow stage"
-          value="Shell ready"
+          value={formatNumber(getCaseStatusCount(recoveryCases, "resolved"))}
         />
       </section>
 
       <section className="content-grid content-grid--two">
         <SectionCard
+          action={
+            <span className="chip">
+              {casesResult.error
+                ? "Case register unavailable"
+                : `${formatNumber(recoveryCases.length)} case${recoveryCases.length === 1 ? "" : "s"}`}
+            </span>
+          }
           className="span-7"
-          description="What will become the durable recovery case register."
+          description="Each case stays linked to one or more issues, along with the editable drafts and workflow status operators use to drive recovery."
           kicker="Register"
-          title="Case list placeholder"
+          title="Case queue"
         >
-          <EmptyState
-            description="Task 12 will add case creation, open/pending/resolved status management, and editable dispute drafts on this route."
-            title="Cases are not stored yet"
-          />
+          {casesResult.error ? (
+            <EmptyState
+              description={casesResult.error}
+              title="Cases could not be loaded."
+              tone="danger"
+            />
+          ) : recoveryCases.length ? (
+            <div className="table-wrap">
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th>Case</th>
+                    <th>Status</th>
+                    <th>Linked issues</th>
+                    <th>Recoverable</th>
+                    <th>Updated</th>
+                    <th>Detail</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {recoveryCases.map((recoveryCase) => (
+                    <tr key={recoveryCase.id}>
+                      <td>
+                        <Link className="table-link-button" href={`/cases/${recoveryCase.id}`}>
+                          <span className="table-link-title">{recoveryCase.title}</span>
+                          <span className="table-note mono">{recoveryCase.id}</span>
+                        </Link>
+                      </td>
+                      <td>
+                        <StatusBadge label={formatStatusLabel(recoveryCase.status)} />
+                      </td>
+                      <td>{formatNumber(recoveryCase.issue_count)}</td>
+                      <td>{formatCurrency(recoveryCase.estimated_recoverable_amount)}</td>
+                      <td>{formatDateTime(recoveryCase.updated_at)}</td>
+                      <td className="is-action">
+                        <Link className="table-action-button" href={`/cases/${recoveryCase.id}`}>
+                          Open case
+                        </Link>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <EmptyState
+              action={
+                <Link className="button button-primary" href="/issues">
+                  Review issue queue
+                </Link>
+              }
+              description="No recovery cases have been created yet. Select one or more issues from the issue queue to open the first case."
+              title="No cases stored yet"
+            />
+          )}
         </SectionCard>
 
         <SectionCard
           className="span-5"
-          description="Current issue pressure that will likely seed early case creation."
+          description="Issue pressure still matters even before a case exists. These provider clusters show where the best case-building candidates are accumulating."
           kicker="Candidates"
           title="Likely case drivers"
         >
@@ -91,7 +187,7 @@ export default async function CasesPage() {
                   <div className="list-row-main">
                     <p className="list-row-title">{provider.provider_name}</p>
                     <p className="list-row-detail">
-                      {formatNumber(provider.count)} issues that could be batched
+                      {formatNumber(provider.count)} issues available to group into cases
                     </p>
                   </div>
                   <p className="list-row-value">
@@ -102,24 +198,10 @@ export default async function CasesPage() {
             </div>
           ) : (
             <EmptyState
-              description="Once issue detection produces findings, this panel will highlight the best case-building candidates."
+              description="Issue candidates will appear as soon as the backend has modeled recovery findings."
               title="No case candidates yet"
             />
           )}
-        </SectionCard>
-
-        <SectionCard
-          className="span-12"
-          description="The future case workflow will sit directly on top of the issue model already present."
-          kicker="Preview"
-          title="Planned case structure"
-        >
-          <ul className="bullet-list">
-            <li>Bundle one or more issues into an operator-owned recovery case.</li>
-            <li>Persist open, pending, and resolved status transitions.</li>
-            <li>Draft and edit summary and email content without losing evidence linkage.</li>
-            <li>Keep cases grounded in the same issue types and providers visible today.</li>
-          </ul>
         </SectionCard>
       </section>
     </div>

@@ -8,6 +8,13 @@ export type {
   ColumnMapping,
   ColumnMappingSuggestion,
   NumericValue,
+  RecoveryCase,
+  RecoveryCaseCreateRequest,
+  RecoveryCaseLinkedIssue,
+  RecoveryCaseListItem,
+  RecoveryCaseStatus,
+  RecoveryCaseUpdateRequest,
+  RecoveryIssueDetection,
   RecoveryIssue,
   RecoveryIssueDashboard,
   RecoveryIssueFilters,
@@ -25,6 +32,11 @@ import type {
   ApiHealth,
   ApiMeta,
   ApiResult,
+  RecoveryCase,
+  RecoveryCaseCreateRequest,
+  RecoveryCaseListItem,
+  RecoveryCaseUpdateRequest,
+  RecoveryIssueDetection,
   RecoveryIssue,
   RecoveryIssueDashboard,
   RecoveryIssueFilters,
@@ -74,13 +86,26 @@ export function makeServerApiUrl(path: string) {
   return `${getServerApiBaseUrl()}${normalizedPath}`;
 }
 
-async function requestJson<T>(path: string): Promise<ApiResult<T>> {
+async function requestJson<T>(
+  path: string,
+  init?: RequestInit,
+): Promise<ApiResult<T>> {
   try {
+    const headers = new Headers({
+      Accept: "application/json",
+    });
+
+    if (init?.headers) {
+      const initHeaders = new Headers(init.headers);
+      initHeaders.forEach((value, key) => {
+        headers.set(key, value);
+      });
+    }
+
     const response = await fetch(makeServerApiUrl(path), {
       cache: "no-store",
-      headers: {
-        Accept: "application/json",
-      },
+      ...init,
+      headers,
     });
 
     if (!response.ok) {
@@ -148,8 +173,22 @@ export function getApiHealth() {
   return requestJson<ApiHealth>("/health");
 }
 
+export function listCases() {
+  return requestJson<RecoveryCaseListItem[]>("/cases");
+}
+
+export function getCase(caseId: string) {
+  return requestJson<RecoveryCase>(`/cases/${caseId}`);
+}
+
 export function getIssueDashboard(days = 30) {
   return requestJson<RecoveryIssueDashboard>(`/issues/dashboard?days=${days}`);
+}
+
+export function triggerIssueDetection() {
+  return requestJson<RecoveryIssueDetection>("/issues/detect", {
+    method: "POST",
+  });
 }
 
 export function listHighSeverityIssues(limit = 5) {
@@ -166,4 +205,24 @@ export function listIssues(filters: RecoveryIssueFilters = {}) {
 
 export function listUploads() {
   return requestJson<UploadJob[]>("/uploads");
+}
+
+export function createCase(payload: RecoveryCaseCreateRequest) {
+  return requestJson<RecoveryCase>("/cases", {
+    body: JSON.stringify(payload),
+    headers: {
+      "Content-Type": "application/json",
+    },
+    method: "POST",
+  });
+}
+
+export function updateCase(caseId: string, payload: RecoveryCaseUpdateRequest) {
+  return requestJson<RecoveryCase>(`/cases/${caseId}`, {
+    body: JSON.stringify(payload),
+    headers: {
+      "Content-Type": "application/json",
+    },
+    method: "PUT",
+  });
 }

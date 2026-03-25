@@ -21,6 +21,8 @@ import {
   toIssueSearchParams,
   type IssuePageSearchParams,
 } from "./issue-utils";
+import { createRecoveryCaseAction } from "../cases/actions";
+import { triggerIssueDetectionAction } from "./actions";
 
 const DASHBOARD_WINDOW_DAYS = 30;
 const TREND_POINT_LIMIT = 14;
@@ -50,6 +52,10 @@ function formatActiveFilterValue(label: string, value: string) {
   }
 
   return value;
+}
+
+function getSearchParamValue(value: string | string[] | undefined) {
+  return Array.isArray(value) ? value[0] : value;
 }
 
 function getMaxMetricCount(metrics: RankedMetric[]) {
@@ -110,10 +116,14 @@ export default async function IssuesPage({ searchParams }: IssuesPageProps) {
   const filterOptions = buildIssueFilterOptions(
     catalogIssues.length ? catalogIssues : issues,
   );
+  const notice = getSearchParamValue(searchParams?.notice);
+  const error = getSearchParamValue(searchParams?.error);
+  const filterSearch = toIssueSearchParams(filters).toString();
+  const currentIssuesPath = filterSearch ? `/issues?${filterSearch}` : "/issues";
+  const caseError = getSearchParamValue(searchParams?.case_error);
   const issuesError = hasActiveFilters
     ? filteredIssuesResult?.error ?? null
     : catalogIssuesResult.error;
-  const filterSearch = toIssueSearchParams(filters).toString();
   const issuesApiHref = makeApiUrl(filterSearch ? `/issues?${filterSearch}` : "/issues");
 
   const dashboard = dashboardResult.data;
@@ -143,6 +153,11 @@ export default async function IssuesPage({ searchParams }: IssuesPageProps) {
         description="Monitor recoverable exposure, narrow the queue with server-backed filters, and open each issue with enough context to decide the next recovery action."
       >
         <div className="page-action-row">
+          <form action={triggerIssueDetectionAction}>
+            <button className="button button-secondary" type="submit">
+              Run issue detection
+            </button>
+          </form>
           {hasActiveFilters ? (
             <Link className="button button-secondary" href="/issues">
               Clear filters
@@ -158,6 +173,18 @@ export default async function IssuesPage({ searchParams }: IssuesPageProps) {
           </a>
         </div>
       </PageHeader>
+
+      {notice ? (
+        <div className="inline-notice inline-notice--good" role="status">
+          {notice}
+        </div>
+      ) : null}
+
+      {error ? (
+        <div className="inline-notice inline-notice--danger" role="status">
+          {error}
+        </div>
+      ) : null}
 
       <section className="metric-grid" aria-label="Issue dashboard metrics">
         <MetricCard
@@ -212,6 +239,12 @@ export default async function IssuesPage({ searchParams }: IssuesPageProps) {
       </section>
 
       <section className="content-grid content-grid--two">
+        {caseError ? (
+          <div className="span-12 inline-notice inline-notice--danger" role="status">
+            {caseError}
+          </div>
+        ) : null}
+
         <SectionCard
           className="span-7"
           description="Recent issue volume over the trailing summary window. Bars show issue counts; the callouts highlight the latest recoverable dollar movement."
@@ -447,7 +480,7 @@ export default async function IssuesPage({ searchParams }: IssuesPageProps) {
             />
           ) : (
             <EmptyState
-              description="Run issue detection to populate issue-type rollups."
+              description="Run issue detection to populate issue-type rollups after your uploads finish normalization."
               title="No issue-type metrics yet"
             />
           )}
@@ -484,11 +517,30 @@ export default async function IssuesPage({ searchParams }: IssuesPageProps) {
 
         <SectionCard
           action={
-            <span className="chip">
-              {issuesError
-                ? "Issue list unavailable"
-                : `${formatNumber(issues.length)} visible issue${issues.length === 1 ? "" : "s"}`}
-            </span>
+            issues.length ? (
+              <div className="page-action-row">
+                <span className="chip">
+                  {issuesError
+                    ? "Issue list unavailable"
+                    : `${formatNumber(issues.length)} visible issue${issues.length === 1 ? "" : "s"}`}
+                </span>
+                {!issuesError ? (
+                  <button
+                    className="button button-primary"
+                    form="create-case-from-issues"
+                    type="submit"
+                  >
+                    Create case from selected
+                  </button>
+                ) : null}
+              </div>
+            ) : (
+              <span className="chip">
+                {issuesError
+                  ? "Issue list unavailable"
+                  : `${formatNumber(issues.length)} visible issue${issues.length === 1 ? "" : "s"}`}
+              </span>
+            )
           }
           className="span-12"
           description="Every row stays linked to a detail page with recovery context and the underlying evidence payload."
@@ -502,57 +554,70 @@ export default async function IssuesPage({ searchParams }: IssuesPageProps) {
               tone="danger"
             />
           ) : issues.length ? (
-            <div className="table-wrap">
-              <table className="data-table">
-                <thead>
-                  <tr>
-                    <th>Issue</th>
-                    <th>Provider</th>
-                    <th>Severity</th>
-                    <th>Status</th>
-                    <th>Confidence</th>
-                    <th>Recoverable</th>
-                    <th>Detected</th>
-                    <th>Detail</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {issues.map((issue) => (
-                    <tr key={issue.id}>
-                      <td>
-                        <Link
-                          className="table-link-button"
-                          href={buildIssueDetailHref(issue.id, filters)}
-                        >
-                          <span className="table-link-title">
-                            {formatStatusLabel(issue.issue_type)}
-                          </span>
-                          <span className="table-note">{issue.summary}</span>
-                        </Link>
-                      </td>
-                      <td>{issue.provider_name}</td>
-                      <td>
-                        <StatusBadge label={formatStatusLabel(issue.severity)} />
-                      </td>
-                      <td>
-                        <StatusBadge label={formatStatusLabel(issue.status)} />
-                      </td>
-                      <td>{formatPercent(issue.confidence)}</td>
-                      <td>{formatCurrency(issue.estimated_recoverable_amount)}</td>
-                      <td>{formatDateTime(issue.detected_at)}</td>
-                      <td className="is-action">
-                        <Link
-                          className="table-action-button"
-                          href={buildIssueDetailHref(issue.id, filters)}
-                        >
-                          View detail
-                        </Link>
-                      </td>
+            <form action={createRecoveryCaseAction} id="create-case-from-issues">
+              <input name="return_to" type="hidden" value={currentIssuesPath} />
+              <div className="table-wrap">
+                <table className="data-table">
+                  <thead>
+                    <tr>
+                      <th>Select</th>
+                      <th>Issue</th>
+                      <th>Provider</th>
+                      <th>Severity</th>
+                      <th>Status</th>
+                      <th>Confidence</th>
+                      <th>Recoverable</th>
+                      <th>Detected</th>
+                      <th>Detail</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                  </thead>
+                  <tbody>
+                    {issues.map((issue) => (
+                      <tr key={issue.id}>
+                        <td className="is-action">
+                          <input
+                            aria-label={`Select ${formatStatusLabel(issue.issue_type)} issue ${issue.id}`}
+                            className="selection-checkbox"
+                            name="issue_id"
+                            type="checkbox"
+                            value={issue.id}
+                          />
+                        </td>
+                        <td>
+                          <Link
+                            className="table-link-button"
+                            href={buildIssueDetailHref(issue.id, filters)}
+                          >
+                            <span className="table-link-title">
+                              {formatStatusLabel(issue.issue_type)}
+                            </span>
+                            <span className="table-note">{issue.summary}</span>
+                          </Link>
+                        </td>
+                        <td>{issue.provider_name}</td>
+                        <td>
+                          <StatusBadge label={formatStatusLabel(issue.severity)} />
+                        </td>
+                        <td>
+                          <StatusBadge label={formatStatusLabel(issue.status)} />
+                        </td>
+                        <td>{formatPercent(issue.confidence)}</td>
+                        <td>{formatCurrency(issue.estimated_recoverable_amount)}</td>
+                        <td>{formatDateTime(issue.detected_at)}</td>
+                        <td className="is-action">
+                          <Link
+                            className="table-action-button"
+                            href={buildIssueDetailHref(issue.id, filters)}
+                          >
+                            View detail
+                          </Link>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </form>
           ) : (
             <EmptyState
               action={

@@ -10,6 +10,15 @@ from sqlalchemy.orm import Mapped, mapped_column
 from app.db.base_class import Base
 from app.models.common import generate_uuid, utcnow
 
+RECOVERY_CASE_STATUS_OPEN = "open"
+RECOVERY_CASE_STATUS_PENDING = "pending"
+RECOVERY_CASE_STATUS_RESOLVED = "resolved"
+RECOVERY_CASE_STATUSES = {
+    RECOVERY_CASE_STATUS_OPEN,
+    RECOVERY_CASE_STATUS_PENDING,
+    RECOVERY_CASE_STATUS_RESOLVED,
+}
+
 
 class RecoveryIssue(Base):
     __tablename__ = "recovery_issues"
