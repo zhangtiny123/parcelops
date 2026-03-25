@@ -12,6 +12,7 @@ export type {
   RecoveryCaseCreateRequest,
   RecoveryCaseLinkedIssue,
   RecoveryCaseListItem,
+  RecoveryCaseRegenerateDraftRequest,
   RecoveryCaseStatus,
   RecoveryCaseUpdateRequest,
   RecoveryIssueDetection,
@@ -34,6 +35,7 @@ import type {
   ApiResult,
   RecoveryCase,
   RecoveryCaseCreateRequest,
+  RecoveryCaseRegenerateDraftRequest,
   RecoveryCaseListItem,
   RecoveryCaseUpdateRequest,
   RecoveryIssueDetection,
@@ -224,5 +226,18 @@ export function updateCase(caseId: string, payload: RecoveryCaseUpdateRequest) {
       "Content-Type": "application/json",
     },
     method: "PUT",
+  });
+}
+
+export function regenerateCaseDrafts(
+  caseId: string,
+  payload: RecoveryCaseRegenerateDraftRequest = {},
+) {
+  return requestJson<RecoveryCase>(`/cases/${caseId}/drafts/regenerate`, {
+    body: JSON.stringify(payload),
+    headers: {
+      "Content-Type": "application/json",
+    },
+    method: "POST",
   });
 }

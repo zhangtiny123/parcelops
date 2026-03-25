@@ -88,7 +88,10 @@ def test_recovery_case_workflow_supports_create_list_detail_and_update(
     _seed_recovery_issues(database_url)
 
     with TestClient(create_app()) as client:
-        create_response = client.post("/cases", json={"issue_ids": ["issue-2", "issue-1"]})
+        create_response = client.post(
+            "/cases",
+            json={"issue_ids": ["issue-2", "issue-1"]},
+        )
 
         assert create_response.status_code == 201
         created_case = create_response.json()
@@ -101,9 +104,19 @@ def test_recovery_case_workflow_supports_create_list_detail_and_update(
         assert created_case["title"] == "UPS recovery case (2 issues)"
         assert created_case["draft_summary"]
         assert "18.75" in created_case["draft_summary"]
+        assert "issue-2" in created_case["draft_summary"]
+        assert "INV-1002" in created_case["draft_summary"]
+        assert "1Z999" in created_case["draft_summary"]
         assert created_case["draft_email"]
         assert "UPS recovery case (2 issues)" in created_case["draft_email"]
-        assert [issue["id"] for issue in created_case["issues"]] == ["issue-2", "issue-1"]
+        assert "INV-1001" in created_case["draft_email"]
+        assert created_case["draft_internal_note"]
+        assert "issue-1" in created_case["draft_internal_note"]
+        assert "Tracking Number: 1Z999" in created_case["draft_internal_note"]
+        assert [issue["id"] for issue in created_case["issues"]] == [
+            "issue-2",
+            "issue-1",
+        ]
 
         list_response = client.get("/cases")
         detail_response = client.get(f"/cases/{case_id}")
@@ -114,6 +127,7 @@ def test_recovery_case_workflow_supports_create_list_detail_and_update(
         assert listed_cases[0]["id"] == case_id
         assert listed_cases[0]["issue_count"] == 2
         assert listed_cases[0]["estimated_recoverable_amount"] == "18.75"
+        assert listed_cases[0]["draft_internal_note"]
 
         assert detail_response.status_code == 200
         detailed_case = detail_response.json()
@@ -129,6 +143,7 @@ def test_recovery_case_workflow_supports_create_list_detail_and_update(
                 "status": "pending",
                 "draft_summary": "Updated summary for operator review.",
                 "draft_email": "Updated dispute email draft.",
+                "draft_internal_note": "Updated internal next-step note.",
             },
         )
 
@@ -138,6 +153,7 @@ def test_recovery_case_workflow_supports_create_list_detail_and_update(
         assert updated_case["status"] == "pending"
         assert updated_case["draft_summary"] == "Updated summary for operator review."
         assert updated_case["draft_email"] == "Updated dispute email draft."
+        assert updated_case["draft_internal_note"] == "Updated internal next-step note."
 
         persisted_detail_response = client.get(f"/cases/{case_id}")
 
@@ -147,6 +163,56 @@ def test_recovery_case_workflow_supports_create_list_detail_and_update(
     assert persisted_case["status"] == "pending"
     assert persisted_case["draft_summary"] == "Updated summary for operator review."
     assert persisted_case["draft_email"] == "Updated dispute email draft."
+    assert persisted_case["draft_internal_note"] == "Updated internal next-step note."
+
+
+def test_recovery_case_workflow_can_regenerate_drafts_from_linked_issue_evidence(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    database_url = _configure_test_environment(
+        tmp_path,
+        monkeypatch,
+        database_name="recovery-case-regenerate.db",
+    )
+    _seed_recovery_issues(database_url)
+
+    with TestClient(create_app()) as client:
+        create_response = client.post(
+            "/cases", json={"issue_ids": ["issue-1", "issue-2"]}
+        )
+        case_id = create_response.json()["id"]
+
+        update_response = client.put(
+            f"/cases/{case_id}",
+            json={
+                "title": "Operator-edited title",
+                "status": "pending",
+                "draft_summary": "Manually edited summary.",
+                "draft_email": "Manually edited email.",
+                "draft_internal_note": "Manually edited internal note.",
+            },
+        )
+
+        regenerate_response = client.post(
+            f"/cases/{case_id}/drafts/regenerate",
+            json={"title": "UPS April disputes"},
+        )
+
+    assert create_response.status_code == 201
+    assert update_response.status_code == 200
+    assert regenerate_response.status_code == 200
+
+    regenerated_case = regenerate_response.json()
+    assert regenerated_case["title"] == "UPS April disputes"
+    assert regenerated_case["status"] == "pending"
+    assert "Manually edited summary." not in regenerated_case["draft_summary"]
+    assert "Manually edited email." not in regenerated_case["draft_email"]
+    assert (
+        "Manually edited internal note." not in regenerated_case["draft_internal_note"]
+    )
+    assert "INV-1001" in regenerated_case["draft_email"]
+    assert "issue-2" in regenerated_case["draft_internal_note"]
 
 
 def test_recovery_case_workflow_rejects_invalid_issue_selection_and_status(
@@ -161,7 +227,10 @@ def test_recovery_case_workflow_rejects_invalid_issue_selection_and_status(
     _seed_recovery_issues(database_url)
 
     with TestClient(create_app()) as client:
-        missing_issue_response = client.post("/cases", json={"issue_ids": ["missing-issue"]})
+        missing_issue_response = client.post(
+            "/cases",
+            json={"issue_ids": ["missing-issue"]},
+        )
         empty_issue_response = client.post("/cases", json={"issue_ids": []})
         create_response = client.post("/cases", json={"issue_ids": ["issue-1"]})
 
@@ -179,6 +248,7 @@ def test_recovery_case_workflow_rejects_invalid_issue_selection_and_status(
                 "status": "closed",
                 "draft_summary": "Summary",
                 "draft_email": "Email",
+                "draft_internal_note": "Internal note",
             },
         )
 

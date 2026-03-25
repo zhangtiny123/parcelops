@@ -5,7 +5,10 @@ import { PageHeader } from "../../../_components/page-header";
 import { EmptyState, MetricCard, SectionCard, StatusBadge } from "../../../_components/ui";
 import { getCase, makeApiUrl } from "../../../_lib/api";
 import { formatCurrency, formatDateTime, formatNumber, formatStatusLabel } from "../../../_lib/format";
-import { updateRecoveryCaseAction } from "../actions";
+import {
+  regenerateRecoveryCaseDraftsAction,
+  updateRecoveryCaseAction,
+} from "../actions";
 
 type CaseDetailPageProps = {
   params: {
@@ -189,7 +192,24 @@ export default async function CaseDetailPage({
               />
             </label>
 
+            <label className="field-group">
+              <span className="field-label">Internal next-step note</span>
+              <textarea
+                className="field-input field-textarea"
+                defaultValue={recoveryCase.draft_internal_note ?? ""}
+                name="draft_internal_note"
+                rows={10}
+              />
+            </label>
+
             <div className="button-row">
+              <button
+                className="button button-secondary"
+                formAction={regenerateRecoveryCaseDraftsAction}
+                type="submit"
+              >
+                Regenerate drafts
+              </button>
               <button className="button button-primary" type="submit">
                 Save case
               </button>

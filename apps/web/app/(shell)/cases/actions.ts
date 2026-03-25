@@ -2,7 +2,7 @@
 
 import { redirect } from "next/navigation";
 
-import { createCase, updateCase } from "../../_lib/api";
+import { createCase, regenerateCaseDrafts, updateCase } from "../../_lib/api";
 import type { RecoveryCaseStatus } from "../../_lib/api-types";
 
 function readStringValue(value: FormDataEntryValue | null) {
@@ -97,6 +97,8 @@ export async function updateRecoveryCaseAction(formData: FormData) {
 
   const result = await updateCase(caseId, {
     draft_email: readStringValue(formData.get("draft_email")).trim() || null,
+    draft_internal_note:
+      readStringValue(formData.get("draft_internal_note")).trim() || null,
     draft_summary: readStringValue(formData.get("draft_summary")).trim() || null,
     status: readStatusValue(formData.get("status")),
     title: readStringValue(formData.get("title")).trim(),
@@ -113,6 +115,36 @@ export async function updateRecoveryCaseAction(formData: FormData) {
   redirect(
     buildRedirectUrl(`/cases/${caseId}`, {
       notice: "Recovery case saved.",
+    }),
+  );
+}
+
+export async function regenerateRecoveryCaseDraftsAction(formData: FormData) {
+  const caseId = readStringValue(formData.get("case_id")).trim();
+
+  if (!caseId) {
+    redirect(
+      buildRedirectUrl("/cases", {
+        error: "Recovery case ID is missing.",
+      }),
+    );
+  }
+
+  const result = await regenerateCaseDrafts(caseId, {
+    title: readStringValue(formData.get("title")).trim() || undefined,
+  });
+
+  if (!result.data) {
+    redirect(
+      buildRedirectUrl(`/cases/${caseId}`, {
+        error: result.error ?? "Unable to regenerate the recovery drafts.",
+      }),
+    );
+  }
+
+  redirect(
+    buildRedirectUrl(`/cases/${caseId}`, {
+      notice: "Drafts regenerated from linked issue evidence.",
     }),
   );
 }

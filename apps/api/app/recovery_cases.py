@@ -7,6 +7,7 @@ from typing import Any, Optional
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.dispute_draft_generator import generate_dispute_draft_artifacts
 from app.models.recovery import RECOVERY_CASE_STATUSES, RecoveryIssue
 
 
@@ -20,6 +21,7 @@ class RecoveryCaseDraft:
     title: str
     draft_summary: str
     draft_email: str
+    draft_internal_note: str
     estimated_recoverable_amount: Decimal
     issues: list[RecoveryIssue]
 
@@ -165,12 +167,17 @@ def build_case_draft(
     issues = load_linked_issues(normalized_issue_ids, db)
     normalized_title = normalize_case_title(title, issues)
     estimated_recoverable_amount = sum_recoverable_amount(issues)
+    dispute_draft_artifacts = generate_dispute_draft_artifacts(
+        title=normalized_title,
+        issues=issues,
+    )
 
     return RecoveryCaseDraft(
         issue_ids=normalized_issue_ids,
         title=normalized_title,
-        draft_summary=build_default_summary(issues),
-        draft_email=build_default_email(normalized_title, issues),
+        draft_summary=dispute_draft_artifacts.case_summary,
+        draft_email=dispute_draft_artifacts.dispute_email,
+        draft_internal_note=dispute_draft_artifacts.internal_next_step_note,
         estimated_recoverable_amount=estimated_recoverable_amount,
         issues=issues,
     )

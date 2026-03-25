@@ -48,6 +48,7 @@ class RecoveryCaseListRead(BaseModel):
     issue_ids: list[str]
     draft_summary: Optional[str]
     draft_email: Optional[str]
+    draft_internal_note: Optional[str]
     estimated_recoverable_amount: Decimal
     created_at: datetime
     updated_at: datetime
@@ -67,6 +68,11 @@ class RecoveryCaseUpdateRequest(BaseModel):
     status: str
     draft_summary: Optional[str] = None
     draft_email: Optional[str] = None
+    draft_internal_note: Optional[str] = None
+
+
+class RecoveryCaseRegenerateDraftRequest(BaseModel):
+    title: Optional[str] = None
 
 
 def _read_case_or_404(case_id: str, db: Session) -> RecoveryCase:
@@ -104,6 +110,7 @@ def _build_case_list_read(
         issue_ids=list(recovery_case.issue_ids),
         draft_summary=recovery_case.draft_summary,
         draft_email=recovery_case.draft_email,
+        draft_internal_note=recovery_case.draft_internal_note,
         estimated_recoverable_amount=sum_recoverable_amount(issues),
         created_at=recovery_case.created_at,
         updated_at=recovery_case.updated_at,
@@ -145,6 +152,7 @@ def create_recovery_case(
         issue_ids=case_draft.issue_ids,
         draft_summary=case_draft.draft_summary,
         draft_email=case_draft.draft_email,
+        draft_internal_note=case_draft.draft_internal_note,
     )
 
     try:
@@ -236,6 +244,9 @@ def update_recovery_case(
     recovery_case.status = normalized_status
     recovery_case.draft_summary = normalize_optional_text(request.draft_summary)
     recovery_case.draft_email = normalize_optional_text(request.draft_email)
+    recovery_case.draft_internal_note = normalize_optional_text(
+        request.draft_internal_note
+    )
 
     try:
         db.add(recovery_case)
@@ -248,3 +259,41 @@ def update_recovery_case(
         ) from exc
 
     return _build_case_detail_read(recovery_case, issues)
+
+
+@router.post("/{case_id}/drafts/regenerate", response_model=RecoveryCaseDetailRead)
+def regenerate_recovery_case_drafts(
+    case_id: str,
+    request: RecoveryCaseRegenerateDraftRequest,
+    db: Annotated[Session, Depends(get_db)],
+) -> RecoveryCaseDetailRead:
+    recovery_case = _read_case_or_404(case_id, db)
+
+    try:
+        case_draft = build_case_draft(
+            list(recovery_case.issue_ids),
+            db,
+            title=request.title or recovery_case.title,
+        )
+    except RecoveryCaseValidationError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
+
+    recovery_case.title = case_draft.title
+    recovery_case.draft_summary = case_draft.draft_summary
+    recovery_case.draft_email = case_draft.draft_email
+    recovery_case.draft_internal_note = case_draft.draft_internal_note
+
+    try:
+        db.add(recovery_case)
+        db.commit()
+    except SQLAlchemyError as exc:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to regenerate recovery case drafts.",
+        ) from exc
+
+    return _build_case_detail_read(recovery_case, case_draft.issues)

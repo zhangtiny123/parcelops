@@ -53,7 +53,7 @@ class CopilotToolbox:
             ),
             ToolDefinition(
                 name="create_case_draft",
-                description="Build a recovery case draft preview from one or more issue ids without persisting it.",
+                description="Build a recovery case draft preview from one or more issue ids without persisting it, including a summary, dispute email, and internal next-step note.",
             ),
         ]
 
@@ -499,6 +499,7 @@ class CopilotToolbox:
                 ),
                 "draft_summary": case_draft.draft_summary,
                 "draft_email": case_draft.draft_email,
+                "draft_internal_note": case_draft.draft_internal_note,
             },
             references=[self._issue_reference(issue) for issue in case_draft.issues],
         )

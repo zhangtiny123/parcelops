@@ -69,6 +69,7 @@ class RecoveryCase(Base):
     issue_ids: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
     draft_summary: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     draft_email: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    draft_internal_note: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,

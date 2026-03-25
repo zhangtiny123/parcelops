@@ -210,6 +210,7 @@ export type RecoveryCaseLinkedIssue = {
 export type RecoveryCaseListItem = {
   created_at: string;
   draft_email: string | null;
+  draft_internal_note: string | null;
   draft_summary: string | null;
   estimated_recoverable_amount: NumericValue;
   id: string;
@@ -231,7 +232,12 @@ export type RecoveryCaseCreateRequest = {
 
 export type RecoveryCaseUpdateRequest = {
   draft_email: string | null;
+  draft_internal_note: string | null;
   draft_summary: string | null;
   status: RecoveryCaseStatus;
   title: string;
+};
+
+export type RecoveryCaseRegenerateDraftRequest = {
+  title?: string;
 };

@@ -432,7 +432,9 @@ class HeuristicToolCallingAdapter(LLMAdapter):
             f'I prepared a recovery case draft titled "{_read_str(output, "title")}" for '
             f"{_read_int(output, 'issue_count')} issue(s) totaling {_read_str(output, 'estimated_recoverable_amount_display')}. "
             "This is a preview only and has not been persisted. "
-            f"Draft summary: {_read_str(output, 'draft_summary')}"
+            f"Case summary:\n{_read_str(output, 'draft_summary')}\n\n"
+            f"Dispute email draft:\n{_read_str(output, 'draft_email')}\n\n"
+            f"Internal next-step note:\n{_read_str(output, 'draft_internal_note')}"
         )
 
 

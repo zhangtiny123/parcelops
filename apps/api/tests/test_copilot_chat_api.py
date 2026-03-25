@@ -383,6 +383,15 @@ def test_copilot_chat_builds_case_draft_without_persisting_case(
     assert payload["tool_calls"][0]["name"] == "create_case_draft"
     assert "preview only and has not been persisted" in payload["message"]
     assert "UPS recovery case (2 issues)" in payload["message"]
+    assert "Internal next-step note" in payload["message"]
+    assert "INV-1001" in payload["message"]
+
+    traces = _load_traces(database_url)
+    assert len(traces) == 1
+    tool_output = traces[0].tool_calls_json[0]["output"]
+    assert tool_output["draft_internal_note"].startswith("Internal next-step note")
+    assert "INV-1001" in tool_output["draft_summary"]
+    assert "INV-1001" in tool_output["draft_email"]
 
     engine = create_engine(database_url)
     try:
