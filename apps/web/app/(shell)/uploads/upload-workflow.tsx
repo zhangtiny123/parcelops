@@ -172,6 +172,7 @@ export function UploadWorkflow({
   initialUploads,
   initialUploadsError,
 }: UploadWorkflowProps) {
+  const [isHydrated, setIsHydrated] = useState(false);
   const [uploads, setUploads] = useState<UploadJob[]>(initialUploads);
   const [uploadsError, setUploadsError] = useState<string | null>(initialUploadsError);
   const [selectedUploadId, setSelectedUploadId] = useState<string | null>(
@@ -217,6 +218,14 @@ export function UploadWorkflow({
   const statusCounts = buildStatusCounts(uploads.map((upload) => upload.status));
   const completedCount =
     (statusCounts.normalized ?? 0) + (statusCounts.normalized_with_errors ?? 0);
+
+  useEffect(() => {
+    setIsHydrated(true);
+  }, []);
+
+  function formatWorkflowDateTime(value: string | null | undefined) {
+    return formatDateTime(value, isHydrated ? undefined : { timeZone: "UTC" });
+  }
 
   useEffect(() => {
     if (!selectedUploadId) {
@@ -717,7 +726,7 @@ export function UploadWorkflow({
                       </td>
                       <td>{formatNumber(upload.normalized_row_count)}</td>
                       <td>{formatNumber(upload.normalization_error_count)}</td>
-                      <td>{formatDateTime(upload.uploaded_at)}</td>
+                      <td>{formatWorkflowDateTime(upload.uploaded_at)}</td>
                       <td className="is-action">
                         <button
                           className="table-action-button"
@@ -978,7 +987,8 @@ export function UploadWorkflow({
                 <div className="list-row-main">
                   <p className="list-row-title">Normalized rows</p>
                   <p className="list-row-detail">
-                    Last started {formatDateTime(selectedUpload.normalization_started_at)}
+                    Last started{" "}
+                    {formatWorkflowDateTime(selectedUpload.normalization_started_at)}
                   </p>
                 </div>
                 <p className="list-row-value">
@@ -989,7 +999,8 @@ export function UploadWorkflow({
                 <div className="list-row-main">
                   <p className="list-row-title">Normalization errors</p>
                   <p className="list-row-detail">
-                    Completed {formatDateTime(selectedUpload.normalization_completed_at)}
+                    Completed{" "}
+                    {formatWorkflowDateTime(selectedUpload.normalization_completed_at)}
                   </p>
                 </div>
                 <p className="list-row-value">

@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 
 import { AppShell } from "../_components/app-shell";
-import { getApiBaseUrl } from "../_lib/api";
+import { getPublicApiBaseUrl } from "../_lib/api";
 
 export const dynamic = "force-dynamic";
 
@@ -10,5 +10,5 @@ type ShellLayoutProps = {
 };
 
 export default function ShellLayout({ children }: ShellLayoutProps) {
-  return <AppShell apiBaseUrl={getApiBaseUrl()}>{children}</AppShell>;
+  return <AppShell apiBaseUrl={getPublicApiBaseUrl()}>{children}</AppShell>;
 }

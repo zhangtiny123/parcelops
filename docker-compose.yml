@@ -6,6 +6,7 @@ services:
       api:
         condition: service_healthy
     environment:
+      API_BASE_URL: ${API_BASE_URL:-http://api:8000}
       NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL}
       PORT: 3000
     ports:

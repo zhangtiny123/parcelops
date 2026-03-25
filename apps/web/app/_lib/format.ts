@@ -1,5 +1,9 @@
 import type { NumericValue } from "./api-types";
 
+type DateTimeFormatOptions = {
+  timeZone?: string;
+};
+
 function toNumber(value: NumericValue | null | undefined) {
   if (typeof value === "number" && Number.isFinite(value)) {
     return value;
@@ -58,7 +62,10 @@ export function formatBytes(value: number) {
   return `${nextValue.toFixed(digits)} ${units[unitIndex]}`;
 }
 
-export function formatDateTime(value: string | null | undefined) {
+export function formatDateTime(
+  value: string | null | undefined,
+  options?: DateTimeFormatOptions,
+) {
   if (!value) {
     return "Not available";
   }
@@ -72,6 +79,7 @@ export function formatDateTime(value: string | null | undefined) {
   return new Intl.DateTimeFormat("en-US", {
     dateStyle: "medium",
     timeStyle: "short",
+    ...(options?.timeZone ? { timeZone: options.timeZone } : {}),
   }).format(parsed);
 }
 

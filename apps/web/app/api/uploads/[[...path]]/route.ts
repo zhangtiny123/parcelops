@@ -1,4 +1,4 @@
-import { makeApiUrl } from "../../../_lib/api";
+import { makeServerApiUrl } from "../../../_lib/api";
 
 type RouteContext = {
   params: {
@@ -17,7 +17,7 @@ function buildUpstreamPath(pathSegments: string[] | undefined) {
 }
 
 function buildUpstreamUrl(request: Request, pathSegments: string[] | undefined) {
-  const upstreamUrl = new URL(makeApiUrl(buildUpstreamPath(pathSegments)));
+  const upstreamUrl = new URL(makeServerApiUrl(buildUpstreamPath(pathSegments)));
   const incomingUrl = new URL(request.url);
   upstreamUrl.search = incomingUrl.search;
   return upstreamUrl;

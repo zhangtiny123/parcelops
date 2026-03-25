@@ -29,7 +29,8 @@ import type {
   UploadJob,
 } from "./api-types";
 
-const DEFAULT_API_BASE_URL = "http://localhost:8000";
+const DEFAULT_PUBLIC_API_BASE_URL = "http://localhost:8000";
+const DEFAULT_SERVER_API_BASE_URL = "http://localhost:8000";
 
 function trimTrailingSlash(value: string) {
   return value.replace(/\/+$/, "");
@@ -47,22 +48,33 @@ function extractErrorMessage(payload: unknown, fallback: string) {
   return fallback;
 }
 
-export function getApiBaseUrl() {
+export function getPublicApiBaseUrl() {
+  return trimTrailingSlash(
+    process.env.NEXT_PUBLIC_API_BASE_URL ?? DEFAULT_PUBLIC_API_BASE_URL,
+  );
+}
+
+export function getServerApiBaseUrl() {
   return trimTrailingSlash(
     process.env.API_BASE_URL ??
       process.env.NEXT_PUBLIC_API_BASE_URL ??
-      DEFAULT_API_BASE_URL,
+      DEFAULT_SERVER_API_BASE_URL,
   );
 }
 
 export function makeApiUrl(path: string) {
   const normalizedPath = path.startsWith("/") ? path : `/${path}`;
-  return `${getApiBaseUrl()}${normalizedPath}`;
+  return `${getPublicApiBaseUrl()}${normalizedPath}`;
+}
+
+export function makeServerApiUrl(path: string) {
+  const normalizedPath = path.startsWith("/") ? path : `/${path}`;
+  return `${getServerApiBaseUrl()}${normalizedPath}`;
 }
 
 async function requestJson<T>(path: string): Promise<ApiResult<T>> {
   try {
-    const response = await fetch(makeApiUrl(path), {
+    const response = await fetch(makeServerApiUrl(path), {
       cache: "no-store",
       headers: {
         Accept: "application/json",
