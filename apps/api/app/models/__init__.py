@@ -1,4 +1,5 @@
 from app.models.billing import ParcelInvoiceLine, RateCardRule, ThreePLInvoiceLine
+from app.models.copilot import CopilotTrace
 from app.models.fulfillment import OrderRecord, Shipment, ShipmentEvent
 from app.models.recovery import RecoveryCase, RecoveryIssue
 from app.models.uploads import (
@@ -9,6 +10,7 @@ from app.models.uploads import (
 )
 
 __all__ = [
+    "CopilotTrace",
     "OrderRecord",
     "ParcelInvoiceLine",
     "RateCardRule",

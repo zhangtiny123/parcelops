@@ -14,6 +14,7 @@ class Settings:
     app_name: str
     app_env: str
     api_port: int
+    copilot_provider: str
     database_echo: bool
     max_upload_size_bytes: int
     postgres_host: str
@@ -29,6 +30,7 @@ def get_settings() -> Settings:
         app_name="ParcelOps Recovery Copilot API",
         app_env=os.getenv("APP_ENV", "development"),
         api_port=int(os.getenv("API_PORT", "8000")),
+        copilot_provider=os.getenv("COPILOT_PROVIDER", "heuristic"),
         database_echo=os.getenv("DATABASE_ECHO", "0") == "1",
         max_upload_size_bytes=int(os.getenv("MAX_UPLOAD_SIZE_BYTES", "26214400")),
         postgres_host=os.getenv("POSTGRES_HOST", "postgres"),

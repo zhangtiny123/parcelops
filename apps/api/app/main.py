@@ -1,6 +1,7 @@
 from fastapi import FastAPI
 
 from app.api.routes.cases import router as cases_router
+from app.api.routes.copilot import router as copilot_router
 from app.api.routes.issues import router as issues_router
 from app.api.routes.meta import router as meta_router
 from app.api.routes.uploads import router as uploads_router
@@ -19,6 +20,7 @@ def create_app() -> FastAPI:
     )
     app.include_router(meta_router)
     app.include_router(cases_router)
+    app.include_router(copilot_router)
     app.include_router(issues_router)
     app.include_router(uploads_router)
 
