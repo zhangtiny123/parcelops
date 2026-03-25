@@ -92,6 +92,16 @@ export type UploadMappingWrite = {
   source_kind: string;
 };
 
+export type RecoveryIssueFilters = {
+  issue_type?: string;
+  parcel_invoice_line_id?: string;
+  provider_name?: string;
+  severity?: string;
+  shipment_id?: string;
+  status?: string;
+  three_pl_invoice_line_id?: string;
+};
+
 export type RecoveryIssue = {
   confidence: NumericValue | null;
   detected_at: string;

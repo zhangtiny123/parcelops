@@ -10,6 +10,7 @@ export type {
   NumericValue,
   RecoveryIssue,
   RecoveryIssueDashboard,
+  RecoveryIssueFilters,
   RecoveryIssueProviderMetric,
   RecoveryIssueTrendPoint,
   RecoveryIssueTypeMetric,
@@ -26,6 +27,7 @@ import type {
   ApiResult,
   RecoveryIssue,
   RecoveryIssueDashboard,
+  RecoveryIssueFilters,
   UploadJob,
 } from "./api-types";
 
@@ -115,6 +117,29 @@ async function requestJson<T>(path: string): Promise<ApiResult<T>> {
   }
 }
 
+function buildQueryString(
+  params: Record<string, number | string | undefined>,
+) {
+  const searchParams = new URLSearchParams();
+
+  for (const [key, value] of Object.entries(params)) {
+    const normalizedValue =
+      typeof value === "string" ? value.trim() : value;
+
+    if (
+      normalizedValue === undefined ||
+      normalizedValue === "" ||
+      normalizedValue === null
+    ) {
+      continue;
+    }
+
+    searchParams.set(key, String(normalizedValue));
+  }
+
+  return searchParams.size ? `?${searchParams.toString()}` : "";
+}
+
 export function getApiMeta() {
   return requestJson<ApiMeta>("/");
 }
@@ -131,8 +156,12 @@ export function listHighSeverityIssues(limit = 5) {
   return requestJson<RecoveryIssue[]>(`/issues/high-severity?limit=${limit}`);
 }
 
-export function listIssues() {
-  return requestJson<RecoveryIssue[]>("/issues");
+export function getIssue(issueId: string) {
+  return requestJson<RecoveryIssue>(`/issues/${issueId}`);
+}
+
+export function listIssues(filters: RecoveryIssueFilters = {}) {
+  return requestJson<RecoveryIssue[]>(`/issues${buildQueryString(filters)}`);
 }
 
 export function listUploads() {

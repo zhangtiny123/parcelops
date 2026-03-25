@@ -4,7 +4,11 @@ type DateTimeFormatOptions = {
   timeZone?: string;
 };
 
-function toNumber(value: NumericValue | null | undefined) {
+type DateFormatOptions = Intl.DateTimeFormatOptions & {
+  timeZone?: string;
+};
+
+export function parseNumericValue(value: NumericValue | null | undefined) {
   if (typeof value === "number" && Number.isFinite(value)) {
     return value;
   }
@@ -22,7 +26,7 @@ export function formatNumber(value: number | null | undefined) {
 }
 
 export function formatCurrency(value: NumericValue | null | undefined) {
-  const amount = toNumber(value);
+  const amount = parseNumericValue(value);
 
   if (amount === null) {
     return "Unavailable";
@@ -30,20 +34,21 @@ export function formatCurrency(value: NumericValue | null | undefined) {
 
   return new Intl.NumberFormat("en-US", {
     currency: "USD",
-    maximumFractionDigits: 0,
+    maximumFractionDigits: 2,
+    minimumFractionDigits: 2,
     style: "currency",
   }).format(amount);
 }
 
 export function formatPercent(value: NumericValue | null | undefined) {
-  const amount = toNumber(value);
+  const amount = parseNumericValue(value);
 
   if (amount === null) {
     return "Not scored";
   }
 
   return new Intl.NumberFormat("en-US", {
-    maximumFractionDigits: 0,
+    maximumFractionDigits: 1,
     style: "percent",
   }).format(amount);
 }
@@ -62,6 +67,41 @@ export function formatBytes(value: number) {
   return `${nextValue.toFixed(digits)} ${units[unitIndex]}`;
 }
 
+function parseDateValue(value: string | null | undefined) {
+  if (!value) {
+    return null;
+  }
+
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+export function formatDate(
+  value: string | null | undefined,
+  options?: DateFormatOptions,
+) {
+  if (!value) {
+    return "Not available";
+  }
+
+  const parsed = parseDateValue(value);
+
+  if (parsed === null) {
+    return value;
+  }
+
+  const { timeZone, ...intlOptions } = options ?? {};
+  const resolvedOptions =
+    Object.keys(intlOptions).length > 0
+      ? intlOptions
+      : { dateStyle: "medium" as const };
+
+  return new Intl.DateTimeFormat("en-US", {
+    ...resolvedOptions,
+    ...(timeZone ? { timeZone } : {}),
+  }).format(parsed);
+}
+
 export function formatDateTime(
   value: string | null | undefined,
   options?: DateTimeFormatOptions,
@@ -70,9 +110,9 @@ export function formatDateTime(
     return "Not available";
   }
 
-  const parsed = new Date(value);
+  const parsed = parseDateValue(value);
 
-  if (Number.isNaN(parsed.getTime())) {
+  if (parsed === null) {
     return value;
   }
 

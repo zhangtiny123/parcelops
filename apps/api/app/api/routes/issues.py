@@ -171,6 +171,22 @@ def list_top_high_severity_issues(
     return list_high_severity_issues(db, limit=limit)
 
 
+@router.get("/{issue_id}", response_model=RecoveryIssueRead)
+def read_recovery_issue(
+    issue_id: str,
+    db: Annotated[Session, Depends(get_db)],
+) -> RecoveryIssue:
+    issue = db.scalar(select(RecoveryIssue).where(RecoveryIssue.id == issue_id))
+
+    if issue is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Recovery issue not found.",
+        )
+
+    return issue
+
+
 @router.get("", response_model=list[RecoveryIssueRead])
 def list_recovery_issues(
     db: Annotated[Session, Depends(get_db)],

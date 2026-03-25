@@ -353,6 +353,51 @@ def test_issue_list_supports_basic_filters(
     assert shipment_issues[0]["shipment_id"] == "ship-2"
 
 
+def test_issue_detail_endpoint_returns_single_issue(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    database_url = _configure_test_environment(
+        tmp_path,
+        monkeypatch,
+        database_name="recovery-issue-detail.db",
+    )
+
+    _seed_recovery_issues(
+        database_url,
+        [
+            RecoveryIssue(
+                id="issue-123",
+                issue_type="duplicate_charge",
+                provider_name="UPS",
+                severity="high",
+                status="open",
+                confidence=Decimal("0.9900"),
+                estimated_recoverable_amount=Decimal("14.10"),
+                shipment_id="ship-1",
+                parcel_invoice_line_id="parcel-1",
+                three_pl_invoice_line_id=None,
+                summary="Duplicate UPS charge.",
+                evidence_json={"tracking_number": "1Z123"},
+                detected_at=datetime(2026, 3, 23, 12, 0, tzinfo=timezone.utc),
+            )
+        ],
+    )
+
+    with TestClient(create_app()) as client:
+        found_response = client.get("/issues/issue-123")
+        missing_response = client.get("/issues/missing-issue")
+
+    assert found_response.status_code == 200
+    issue = found_response.json()
+    assert issue["id"] == "issue-123"
+    assert issue["summary"] == "Duplicate UPS charge."
+    assert issue["estimated_recoverable_amount"] == "14.10"
+
+    assert missing_response.status_code == 404
+    assert missing_response.json() == {"detail": "Recovery issue not found."}
+
+
 def test_issue_dashboard_returns_aggregate_metrics_and_zero_filled_trend(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
