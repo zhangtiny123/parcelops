@@ -1,4 +1,4 @@
-import type { NumericValue } from "./api";
+import type { NumericValue } from "./api-types";
 
 function toNumber(value: NumericValue | null | undefined) {
   if (typeof value === "number" && Number.isFinite(value)) {

@@ -343,6 +343,13 @@ code {
   background: rgba(255, 255, 255, 0.96);
 }
 
+.table-action-button,
+.table-link-button {
+  border: 0;
+  background: transparent;
+  color: inherit;
+}
+
 .metric-grid,
 .content-grid,
 .prompt-grid {
@@ -504,6 +511,85 @@ code {
   font-size: 0.82rem;
 }
 
+.upload-form,
+.field-group,
+.workflow-summary,
+.mapping-toolbar,
+.loading-preview {
+  display: grid;
+  gap: 0.85rem;
+}
+
+.field-group {
+  min-width: 0;
+}
+
+.field-label {
+  font-size: 0.8rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.field-input,
+.field-select {
+  width: 100%;
+  min-height: 2.9rem;
+  padding: 0.8rem 0.9rem;
+  border: 1px solid rgba(19, 33, 42, 0.12);
+  border-radius: 0.9rem;
+  background: rgba(255, 255, 255, 0.88);
+  color: var(--ink);
+}
+
+.field-input:focus-visible,
+.field-select:focus-visible,
+.table-action-button:focus-visible,
+.table-link-button:focus-visible {
+  outline: 2px solid rgba(191, 93, 47, 0.35);
+  outline-offset: 2px;
+}
+
+.field-select--compact {
+  min-width: 12rem;
+  min-height: 2.6rem;
+  padding-top: 0.65rem;
+  padding-bottom: 0.65rem;
+}
+
+.workflow-note {
+  margin: 0;
+  color: var(--ink-soft);
+  line-height: 1.6;
+}
+
+.inline-notice {
+  padding: 0.95rem 1rem;
+  border: 1px solid rgba(19, 33, 42, 0.08);
+  border-radius: 1rem;
+  background: rgba(255, 255, 255, 0.84);
+  color: var(--ink);
+}
+
+.inline-notice--good {
+  border-color: rgba(30, 127, 90, 0.14);
+  background: var(--good-soft);
+  color: var(--good);
+}
+
+.inline-notice--warning {
+  border-color: rgba(171, 106, 7, 0.16);
+  background: var(--warning-soft);
+  color: var(--warning);
+}
+
+.inline-notice--danger {
+  border-color: rgba(179, 58, 50, 0.16);
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+
 .status-badge {
   border: 1px solid rgba(19, 33, 42, 0.08);
   background: rgba(255, 255, 255, 0.72);
@@ -562,10 +648,47 @@ code {
   color: var(--ink-soft);
 }
 
+.data-table tr.is-selected td {
+  background: rgba(191, 93, 47, 0.06);
+}
+
 .data-table strong {
   display: block;
   margin-bottom: 0.2rem;
   color: var(--ink);
+}
+
+.data-table td.is-action {
+  width: 1%;
+  white-space: nowrap;
+}
+
+.table-link-button {
+  display: grid;
+  gap: 0.2rem;
+  justify-items: start;
+  padding: 0;
+  text-align: left;
+}
+
+.table-link-title {
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.table-action-button {
+  min-height: 2rem;
+  padding: 0.45rem 0.8rem;
+  border-radius: 999px;
+  border: 1px solid rgba(19, 33, 42, 0.1);
+  background: rgba(255, 255, 255, 0.78);
+  cursor: pointer;
+}
+
+.table-action-button:hover,
+.table-action-button:focus-visible {
+  border-color: rgba(191, 93, 47, 0.35);
+  background: rgba(255, 255, 255, 0.96);
 }
 
 .table-note,
