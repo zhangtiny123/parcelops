@@ -34,7 +34,7 @@ export default async function CopilotPage() {
       <PageHeader
         eyebrow="Copilot"
         title="Grounded analysis workspace"
-        description="Ask grounded questions about recoverable issues, spend shifts, and billing anomalies. Each answer stays tied to ParcelOps evidence and makes the cited records visible."
+        description="Ask grounded questions about recoverable issues, spend shifts, and billing anomalies. The default demo uses the built-in heuristic provider, so each answer stays tied to ParcelOps evidence without extra API-key setup."
       >
         <div className="page-action-row">
           <a
@@ -43,7 +43,7 @@ export default async function CopilotPage() {
             rel="noreferrer"
             target="_blank"
           >
-            Backend surface
+            API docs
           </a>
         </div>
       </PageHeader>

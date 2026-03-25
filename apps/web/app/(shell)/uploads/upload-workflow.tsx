@@ -611,8 +611,9 @@ export function UploadWorkflow({
               />
             </label>
             <p className="workflow-note">
-              CSV and XLSX uploads are supported. Preview rows and mapping suggestions
-              load automatically after submission.
+              CSV and XLSX uploads are supported. For the seeded walkthrough, start
+              with <code>orders.csv</code> and <code>shipments.csv</code>, then move
+              to events, invoice files, and rate cards.
             </p>
             <div className="button-row">
               <button
@@ -654,7 +655,7 @@ export function UploadWorkflow({
             </div>
           ) : (
             <EmptyState
-              description="Upload a file to begin preview, mapping, and normalization."
+              description="Upload a file to begin preview, mapping, and normalization, or preload the full flow with ./scripts/demo-up.sh."
               title="No file selected"
             />
           )}
@@ -745,7 +746,7 @@ export function UploadWorkflow({
             </div>
           ) : (
             <EmptyState
-              description="No uploads are registered yet. Use the intake panel to send the first file through the workflow."
+              description="No uploads are registered yet. Use the intake panel with files from data/generated/ or preload the walkthrough with ./scripts/demo-up.sh."
               title="No uploads yet"
             />
           )}
@@ -773,6 +774,9 @@ export function UploadWorkflow({
               <div className="loading-line" />
               <div className="loading-line" />
               <div className="loading-line" />
+              <p className="workflow-note">
+                Loading preview rows, saved mappings, and normalization state.
+              </p>
             </div>
           ) : selectedUploadPreview?.columns.length ? (
             <div className="table-wrap">

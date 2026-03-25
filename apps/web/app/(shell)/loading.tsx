@@ -7,6 +7,9 @@ export default function ShellLoading() {
           <div className="loading-line loading-line--title" />
           <div className="loading-line loading-line--body" />
         </div>
+        <p className="workflow-note">
+          Loading live ParcelOps data and rebuilding the demo workspace.
+        </p>
       </section>
 
       <section className="metric-grid">

@@ -2,95 +2,137 @@
 
 ParcelOps Recovery Copilot is a local-first demo product for detecting parcel and 3PL billing errors, explaining what happened, and helping operators turn findings into recovery actions.
 
-Task 01 is now implemented as a minimal bootstrap stack:
+The stack includes:
 
-- `web`: Next.js placeholder operator dashboard at `http://localhost:3000`
-- `api`: FastAPI service with `GET /health` at `http://localhost:8000/health`
-- `worker`: Celery worker connected to Redis
-- `postgres`: PostgreSQL for upcoming persistence work
+- `web`: Next.js operator workspace at `http://localhost:3000`
+- `api`: FastAPI backend at `http://localhost:8000`
+- `worker`: Celery worker for normalization jobs
+- `postgres`: PostgreSQL persistence
 - `redis`: Redis broker and cache
 
-## Quick start
+## Fastest Demo Path
 
-1. Copy the environment template:
+For the clean-machine walkthrough, use the one-command demo bootstrap:
 
-   ```bash
-   cp .env.example .env
-   ```
+```bash
+./scripts/demo-up.sh
+```
 
-2. Build and start the stack:
+That helper will:
 
-   ```bash
-   docker compose up --build
-   ```
+1. Create `.env` from `.env.example` if needed.
+2. Regenerate the seeded demo dataset into `data/generated/`.
+3. Start Docker Compose in detached mode.
+4. Upload the sample files through the API.
+5. Save suggested mappings.
+6. Normalize the files in dependency-safe order.
+7. Run issue detection.
 
-3. Check the running services:
+When it finishes, open:
 
-   - Web UI: `http://localhost:3000`
-   - Web health: `http://localhost:3000/health`
-   - API health: `http://localhost:8000/health`
-   - API DB health: `http://localhost:8000/db-health`
-   - API docs: `http://localhost:8000/docs`
+- Web UI: `http://localhost:3000`
+- Web health: `http://localhost:3000/health`
+- API health: `http://localhost:8000/health`
+- API docs: `http://localhost:8000/docs`
 
-4. Stop the stack:
-
-   ```bash
-   docker compose down
-   ```
-
-To remove the database volume as well:
+To reset the demo data and start over from a blank database:
 
 ```bash
 docker compose down -v
 ```
 
-## Run Only Dependencies
+Then run `./scripts/demo-up.sh` again.
 
-If you want to run the API and worker directly on your machine while keeping only Postgres and Redis in Docker, use the dependency-only workflow.
+## Demo Walkthrough
 
-1. Start just the backing services:
+After `./scripts/demo-up.sh`, the product story is ready to walk through:
+
+1. Open `/dashboard` to confirm API health, recent uploads, and recoverable totals.
+2. Open `/uploads` to show the seeded files, their source kinds, and completed normalization states.
+3. Open `/issues` to review the detected anomalies and create a recovery case from selected issues.
+4. Open `/cases` to refine the generated dispute drafts and internal notes.
+5. Open `/copilot` to ask grounded questions against the detected issue set.
+
+The seeded demo flow should produce 18 issues with this breakdown:
+
+- `duplicate_charge`: 4
+- `billed_weight_mismatch`: 4
+- `zone_mismatch`: 3
+- `incorrect_unit_rate_vs_rate_card`: 3
+- `invoice_line_without_matched_order_or_shipment`: 2
+- `invoice_line_without_matched_shipment`: 2
+
+## Environment Config
+
+Copy the template if you want to review or customize local settings:
+
+```bash
+cp .env.example .env
+```
+
+The most relevant variables for demo runs are:
+
+- `WEB_PORT`: host port for the Next.js app
+- `API_PORT`: host port for the FastAPI service
+- `NEXT_PUBLIC_API_BASE_URL`: browser-visible API base URL for the web app
+- `DATABASE_URL`: database connection string used by the API and worker
+- `LOCAL_STORAGE_ROOT`: mounted upload storage path inside the containers
+- `COPILOT_PROVIDER`: defaults to `heuristic`
+
+The default copilot mode is `heuristic`, so the demo does not require an external API key.
+
+## Manual Setup
+
+If you want to bring the stack up step by step instead of using `./scripts/demo-up.sh`:
+
+1. Copy the environment template.
 
    ```bash
-   ./scripts/start-deps.sh
+   cp .env.example .env
    ```
 
-2. Run the API locally from the repo root:
+2. Start the stack.
 
    ```bash
-   ./scripts/run-api-local.sh
+   docker compose up --build -d
    ```
 
-3. Run the worker locally from the repo root in a separate terminal:
+3. Confirm the core services are healthy.
+
+   - Web: `http://localhost:3000/health`
+   - API: `http://localhost:8000/health`
+   - API docs: `http://localhost:8000/docs`
+
+4. Regenerate the sample dataset if you want a fresh copy.
 
    ```bash
-   ./scripts/run-worker-local.sh
+   ./scripts/generate-demo-dataset.sh
    ```
 
-This workflow uses the host-exposed ports that Compose already publishes:
+5. Load the seeded walkthrough data through the API.
 
-- Postgres: `localhost:5432`
-- Redis: `localhost:6379`
+   ```bash
+   python3 scripts/seed_demo_workflow.py --wait-for-api
+   ```
 
-The local run scripts automatically point `DATABASE_URL`, `CELERY_BROKER_URL`, and related settings at `localhost` unless you override them.
+The seeded loader expects an empty uploads table by default. If you already loaded demo data, reset with `docker compose down -v` before rerunning it.
 
-## Demo dataset
+## Dataset Generation
 
-Generate or refresh the synthetic demo dataset with one command:
+The synthetic demo dataset is reproducible and stays stable by default:
 
 ```bash
 ./scripts/generate-demo-dataset.sh
 ```
 
-The generator writes reusable CSVs into `data/generated/`:
+The default seed is `20260323`. Generated files are written to `data/generated/`:
 
 - `orders.csv`
 - `shipments.csv`
-- `parcel_invoice_lines.csv`
 - `shipment_events.csv`
+- `parcel_invoice_lines.csv`
 - `three_pl_invoice_lines.csv`
 - `rate_card_rules.csv`
-
-The default seed is `20260323`, so regenerated data stays stable for demos. The dataset intentionally includes 18 seeded anomalies across duplicate parcel charges, billed-weight mismatches, zone mismatches, incorrect 3PL rates, and orphan invoice rows.
 
 To write the output somewhere else or use a different seed:
 
@@ -98,7 +140,79 @@ To write the output somewhere else or use a different seed:
 ./scripts/generate-demo-dataset.sh --seed 20260401 --output-dir /tmp/parcelops-demo
 ```
 
-## Repository layout
+## Manual Upload Walkthrough
+
+If you want to show ingestion interactively in the browser instead of using the seeded loader, use the files in `data/generated/` and upload them in this order:
+
+1. `orders.csv`
+2. `shipments.csv`
+3. `shipment_events.csv`
+4. `parcel_invoice_lines.csv`
+5. `three_pl_invoice_lines.csv`
+6. `rate_card_rules.csv`
+
+For each file:
+
+1. Upload it from `/uploads`.
+2. Confirm the suggested source kind.
+3. Save the mapping.
+4. Run normalization and wait for the upload to finish.
+
+After all files are normalized, open `/issues` and click `Run issue detection`.
+
+## Copilot Usage
+
+The copilot page is available at `/copilot`.
+
+- The default `heuristic` provider works out of the box for demos.
+- Starter prompts are built in for top recoveries, provider spend shifts, and high-confidence billing errors.
+- The best results come after the seeded uploads have been normalized and issue detection has been run.
+
+Useful first prompts:
+
+- `Which open issues represent the highest recoverable amount right now?`
+- `Explain which providers have the sharpest recovery-cost increase this month.`
+- `Show the billing errors with the strongest confidence and the evidence behind them.`
+
+## Helper Scripts
+
+- `./scripts/demo-up.sh`: end-to-end demo bootstrap from `.env` creation through issue detection
+- `./scripts/generate-demo-dataset.sh`: regenerate the seeded demo CSVs
+- `python3 scripts/seed_demo_workflow.py --wait-for-api`: load the seeded dataset through the upload API without restarting Compose
+- `./scripts/start-deps.sh`: start only Postgres and Redis in Docker
+- `./scripts/run-api-local.sh`: run the API locally against the dependency containers
+- `./scripts/run-worker-local.sh`: run the worker locally against the dependency containers
+- `./scripts/stop-deps.sh`: stop the dependency containers
+- `./scripts/run-checks.sh`: run the main API and web checks already wired into the repo
+
+## Run Only Dependencies
+
+If you want to run the API and worker directly on your machine while keeping only Postgres and Redis in Docker:
+
+1. Start the backing services.
+
+   ```bash
+   ./scripts/start-deps.sh
+   ```
+
+2. Run the API locally.
+
+   ```bash
+   ./scripts/run-api-local.sh
+   ```
+
+3. Run the worker locally in another terminal.
+
+   ```bash
+   ./scripts/run-worker-local.sh
+   ```
+
+The local scripts now load `.env` when present and default to the same host ports that Compose publishes:
+
+- Postgres: `localhost:5432`
+- Redis: `localhost:6379`
+
+## Repository Layout
 
 ```text
 apps/
@@ -122,16 +236,7 @@ docker-compose.yml
 .env.example
 ```
 
-## Service notes
-
-- The stack is intentionally minimal and health-oriented for this bootstrap task.
-- The web app is a placeholder operator shell, not the full product UI.
-- Postgres is provisioned and reachable by service name, but schema setup begins in Task 02.
-- The API applies Alembic migrations on startup before serving requests.
-- The worker runs a basic Celery app and uses Redis as broker and result backend.
-- Uploaded-file storage is mounted to `./data/uploads` for future ingestion work.
-
-## Subsystem docs
+## Subsystem Docs
 
 - Web: [apps/web/README.md](apps/web/README.md)
 - API: [apps/api/README.md](apps/api/README.md)

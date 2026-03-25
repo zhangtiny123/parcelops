@@ -16,8 +16,8 @@ export function AppShell({ apiBaseUrl, children }: AppShellProps) {
           <p className="brand-label">ParcelOps</p>
           <p className="brand-title">Recovery Copilot</p>
           <p className="brand-copy">
-            Operator workspace for upload intake, anomaly review, and dispute
-            preparation.
+            Demo workspace for upload intake, anomaly review, grounded analysis,
+            and dispute preparation.
           </p>
         </div>
 
@@ -32,14 +32,14 @@ export function AppShell({ apiBaseUrl, children }: AppShellProps) {
       <div className="main-column">
         <header className="topbar">
           <div className="topbar-copy">
-            <p className="topbar-label">Frontend shell</p>
+            <p className="topbar-label">Demo workspace</p>
             <p className="topbar-title">Operations control room</p>
           </div>
           <div className="topbar-chip-group">
-            <span className="chip chip-muted">Next.js shell</span>
-            <span className="chip">API-linked</span>
+            <span className="chip chip-muted">Live API</span>
+            <span className="chip">Grounded copilot</span>
             <Link className="chip" href="/dashboard">
-              Current workspace
+              Dashboard
             </Link>
           </div>
         </header>

@@ -39,9 +39,12 @@ export default async function DashboardPage() {
       <PageHeader
         eyebrow="Dashboard"
         title="Recovery operations overview"
-        description="Review the current ingest lane, issue pressure, and backend readiness from a single operator shell."
+        description="Start the walkthrough here: confirm the ingest lane is populated, review issue pressure, and verify the backend is ready before opening issues, cases, or copilot."
       >
         <div className="page-action-row">
+          <Link className="button button-secondary" href="/uploads">
+            Open uploads
+          </Link>
           <Link className="button button-secondary" href="/issues">
             Review issues
           </Link>
@@ -95,7 +98,7 @@ export default async function DashboardPage() {
                 ? `${latestUpload.original_filename} · ${formatStatusLabel(
                     latestUpload.status,
                   )}`
-                : "No uploads are registered yet."
+                : "Run the seeded demo bootstrap or start in the uploads lane."
           }
           label="Uploads tracked"
           value={
@@ -201,7 +204,7 @@ export default async function DashboardPage() {
             </div>
           ) : (
             <EmptyState
-              description="Task 10 will add browser file submission, preview, and mapping from this lane."
+              description="Run ./scripts/demo-up.sh or upload the seeded CSVs from data/generated/ to populate this lane."
               title="No uploads have been registered"
             />
           )}
