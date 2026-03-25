@@ -40,6 +40,12 @@ Run migrations locally from `apps/api`:
 ./.venv/bin/alembic upgrade head
 ```
 
+Run the copilot eval harness from the repository root:
+
+```bash
+./scripts/run-copilot-evals.sh
+```
+
 Useful endpoints after the database is available:
 
 - Health: `http://localhost:8000/health`

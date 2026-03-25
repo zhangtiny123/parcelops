@@ -1,0 +1,381 @@
+{
+  "name": "parcelops-copilot-core-v1",
+  "description": "Deterministic fixture-backed evals for the ParcelOps copilot heuristic adapter.",
+  "cases": [
+    {
+      "id": "issues_top_recoverable",
+      "category": "issues",
+      "question": "Which open issues represent the highest recoverable amount right now?",
+      "scoring_notes": "Should rank the open issues by recoverable amount and surface both open issue references.",
+      "expected": {
+        "status": "completed",
+        "tool_calls": [
+          {
+            "name": "search_issues",
+            "arguments": {
+              "intent": "top_recovery",
+              "status": "open",
+              "sort_by": "recoverable_amount_desc",
+              "limit": 5
+            }
+          }
+        ],
+        "correctness_must_include": ["issue-1", "$12.50"],
+        "groundedness_must_include": ["issue-2"],
+        "required_reference_ids": ["issue-1", "issue-2"],
+        "min_reference_count": 2
+      }
+    },
+    {
+      "id": "dashboard_last_30_days",
+      "category": "dashboard",
+      "question": "Give me dashboard metrics for the last 30 days.",
+      "scoring_notes": "Should use dashboard metrics for a 30-day window and surface the UPS recoverable amount.",
+      "expected": {
+        "status": "completed",
+        "tool_calls": [
+          {
+            "name": "get_dashboard_metrics",
+            "arguments": {
+              "days": 30,
+              "compare_previous_period": false
+            }
+          }
+        ],
+        "correctness_must_include": ["last 30 days", "$18.75", "UPS"],
+        "max_reference_count": 0
+      }
+    },
+    {
+      "id": "issue_count_all",
+      "category": "issues",
+      "question": "How many recovery issues do we have?",
+      "scoring_notes": "Should answer with a count only and avoid listing issue references.",
+      "expected": {
+        "status": "completed",
+        "tool_calls": [
+          {
+            "name": "search_issues",
+            "arguments": {
+              "intent": "count"
+            }
+          }
+        ],
+        "correctness_must_include": ["3 recovery issue(s)"],
+        "max_reference_count": 0
+      }
+    },
+    {
+      "id": "shipment_count_all",
+      "category": "shipments",
+      "question": "How many shipment records do we have?",
+      "scoring_notes": "Should answer with the shipment count only and avoid returning shipment references.",
+      "expected": {
+        "status": "completed",
+        "tool_calls": [
+          {
+            "name": "search_shipments",
+            "arguments": {
+              "intent": "count"
+            }
+          }
+        ],
+        "correctness_must_include": ["1 shipment record(s)"],
+        "max_reference_count": 0
+      }
+    },
+    {
+      "id": "issues_high_confidence",
+      "category": "issues",
+      "question": "Show the billing errors with the strongest confidence and the evidence behind them.",
+      "scoring_notes": "Should switch to the high-confidence issue search path and keep both open issue references grounded.",
+      "expected": {
+        "status": "completed",
+        "tool_calls": [
+          {
+            "name": "search_issues",
+            "arguments": {
+              "intent": "high_confidence",
+              "status": "open",
+              "sort_by": "confidence_desc",
+              "min_confidence": "0.80"
+            }
+          }
+        ],
+        "correctness_must_include": ["high-confidence recovery issue(s)", "issue-1"],
+        "groundedness_must_include": ["issue-2"],
+        "required_reference_ids": ["issue-1", "issue-2"],
+        "min_reference_count": 2
+      }
+    },
+    {
+      "id": "shipment_lookup_tracking_number",
+      "category": "shipments",
+      "question": "Look up shipment 1Z999AA10123456784.",
+      "scoring_notes": "Should resolve the shipment by tracking number and keep the linked issue and invoice data grounded.",
+      "expected": {
+        "status": "completed",
+        "tool_calls": [
+          {
+            "name": "lookup_shipment",
+            "arguments": {
+              "identifier": "1Z999AA10123456784"
+            }
+          }
+        ],
+        "correctness_must_include": ["shipment-1", "issue-1"],
+        "groundedness_must_include": ["INV-1001"],
+        "required_reference_ids": ["shipment-1", "issue-1"],
+        "min_reference_count": 2
+      }
+    },
+    {
+      "id": "case_draft_preview",
+      "category": "cases",
+      "question": "Create a case draft for issue-1 and issue-2.",
+      "scoring_notes": "Should build a non-persisted case draft preview that includes the generated internal note and both issue references.",
+      "expected": {
+        "status": "completed",
+        "tool_calls": [
+          {
+            "name": "create_case_draft",
+            "arguments": {
+              "issue_ids": ["issue-1", "issue-2"]
+            }
+          }
+        ],
+        "correctness_must_include": [
+          "preview only and has not been persisted",
+          "UPS recovery case (2 issues)",
+          "Internal next-step note"
+        ],
+        "groundedness_must_include": ["INV-1001"],
+        "required_reference_ids": ["issue-1", "issue-2"],
+        "min_reference_count": 2
+      }
+    },
+    {
+      "id": "unsupported_weather",
+      "category": "unsupported",
+      "question": "What's the weather in Miami today?",
+      "scoring_notes": "Should refuse the out-of-scope question without attempting any tool calls or references.",
+      "expected": {
+        "status": "unsupported",
+        "tool_calls": [],
+        "correctness_must_include": ["grounded questions about ParcelOps"],
+        "forbidden_fragments": ["issue-1", "shipment-1"],
+        "max_reference_count": 0
+      }
+    },
+    {
+      "id": "issues_open_ups",
+      "category": "issues",
+      "question": "List open UPS issues.",
+      "scoring_notes": "Should filter issue search to open UPS issues and keep both matching issue references.",
+      "expected": {
+        "status": "completed",
+        "tool_calls": [
+          {
+            "name": "search_issues",
+            "arguments": {
+              "intent": "search",
+              "status": "open",
+              "provider_name": "UPS"
+            }
+          }
+        ],
+        "correctness_must_include": ["provider=UPS", "issue-1", "issue-2"],
+        "required_reference_ids": ["issue-1", "issue-2"],
+        "min_reference_count": 2
+      }
+    },
+    {
+      "id": "issue_count_resolved",
+      "category": "issues",
+      "question": "How many resolved recovery issues do we have?",
+      "scoring_notes": "Should count resolved issues and avoid returning references.",
+      "expected": {
+        "status": "completed",
+        "tool_calls": [
+          {
+            "name": "search_issues",
+            "arguments": {
+              "intent": "count",
+              "status": "resolved"
+            }
+          }
+        ],
+        "correctness_must_include": ["1 recovery issue(s)", "status=resolved"],
+        "max_reference_count": 0
+      }
+    },
+    {
+      "id": "issue_detail_issue_1",
+      "category": "issues",
+      "question": "Show me the details and evidence for issue-1.",
+      "scoring_notes": "Should fetch the issue detail record, include evidence, and return both the issue and shipment references.",
+      "expected": {
+        "status": "completed",
+        "tool_calls": [
+          {
+            "name": "get_issue_detail",
+            "arguments": {
+              "issue_id": "issue-1"
+            }
+          }
+        ],
+        "correctness_must_include": ["issue-1", "Confidence:", "Billed weight exceeds"],
+        "groundedness_must_include": ["INV-1001", "1Z999AA10123456784"],
+        "required_reference_ids": ["issue-1", "shipment-1"],
+        "min_reference_count": 2
+      }
+    },
+    {
+      "id": "issue_detail_missing_issue",
+      "category": "issues",
+      "question": "Show me the details for issue-999.",
+      "scoring_notes": "Should return a safe not-found response without fabricating references.",
+      "expected": {
+        "status": "completed",
+        "tool_calls": [
+          {
+            "name": "get_issue_detail",
+            "arguments": {
+              "issue_id": "issue-999"
+            }
+          }
+        ],
+        "correctness_must_include": ["could not find recovery issue issue-999"],
+        "max_reference_count": 0
+      }
+    },
+    {
+      "id": "shipment_lookup_shipment_id",
+      "category": "shipments",
+      "question": "Find shipment shipment-1.",
+      "scoring_notes": "Should resolve the shipment by internal ID and keep the linked issue reference grounded.",
+      "expected": {
+        "status": "completed",
+        "tool_calls": [
+          {
+            "name": "lookup_shipment",
+            "arguments": {
+              "identifier": "shipment-1"
+            }
+          }
+        ],
+        "correctness_must_include": ["1Z999AA10123456784", "issue-1"],
+        "groundedness_must_include": ["INV-1001"],
+        "required_reference_ids": ["shipment-1", "issue-1"],
+        "min_reference_count": 2
+      }
+    },
+    {
+      "id": "shipment_count_ups",
+      "category": "shipments",
+      "question": "How many UPS shipment records do we have?",
+      "scoring_notes": "Should count only UPS shipments and avoid returning references.",
+      "expected": {
+        "status": "completed",
+        "tool_calls": [
+          {
+            "name": "search_shipments",
+            "arguments": {
+              "intent": "count",
+              "carrier": "UPS"
+            }
+          }
+        ],
+        "correctness_must_include": ["1 shipment record(s) for carrier UPS"],
+        "max_reference_count": 0
+      }
+    },
+    {
+      "id": "dashboard_period_comparison",
+      "category": "dashboard",
+      "question": "Compare dashboard increases over the last 30 days with the previous period.",
+      "scoring_notes": "Should request the period comparison mode and surface the UPS delta against the prior window.",
+      "expected": {
+        "status": "completed",
+        "tool_calls": [
+          {
+            "name": "get_dashboard_metrics",
+            "arguments": {
+              "days": 30,
+              "compare_previous_period": true
+            }
+          }
+        ],
+        "correctness_must_include": [
+          "Compared with the previous matching time window",
+          "UPS increased by $18.75"
+        ],
+        "max_reference_count": 0
+      }
+    },
+    {
+      "id": "issues_open_duplicate_charge",
+      "category": "issues",
+      "question": "Show open duplicate charge issues.",
+      "scoring_notes": "Should filter issue search to the open duplicate-charge issue and keep the reference grounded.",
+      "expected": {
+        "status": "completed",
+        "tool_calls": [
+          {
+            "name": "search_issues",
+            "arguments": {
+              "intent": "search",
+              "status": "open",
+              "issue_type": "duplicate_charge"
+            }
+          }
+        ],
+        "correctness_must_include": ["type=Duplicate Charge", "issue-2"],
+        "required_reference_ids": ["issue-2"],
+        "min_reference_count": 1
+      }
+    },
+    {
+      "id": "case_draft_validation_failure",
+      "category": "cases",
+      "question": "Create a case draft for issue-1 and issue-999.",
+      "scoring_notes": "Should surface the recovery-case validation error instead of fabricating a draft.",
+      "expected": {
+        "status": "completed",
+        "tool_calls": [
+          {
+            "name": "create_case_draft",
+            "arguments": {
+              "issue_ids": ["issue-1", "issue-999"]
+            }
+          }
+        ],
+        "correctness_must_include": [
+          "could not build that recovery case draft safely",
+          "Recovery issues not found: issue-999."
+        ],
+        "max_reference_count": 0
+      }
+    },
+    {
+      "id": "shipment_count_fedex_zero_results",
+      "category": "shipments",
+      "question": "How many FedEx shipment records do we have?",
+      "scoring_notes": "Should report zero matching shipments for FedEx without fabricating results or references.",
+      "expected": {
+        "status": "completed",
+        "tool_calls": [
+          {
+            "name": "search_shipments",
+            "arguments": {
+              "intent": "count",
+              "carrier": "FedEx"
+            }
+          }
+        ],
+        "correctness_must_include": ["did not find any shipment records for carrier FedEx"],
+        "max_reference_count": 0
+      }
+    }
+  ]
+}
