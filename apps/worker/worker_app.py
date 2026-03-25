@@ -11,8 +11,10 @@ if str(API_ROOT) not in sys.path:
 
 from app.celery_app import broker_url, celery_app  # noqa: E402
 import app.normalization_tasks  # noqa: F401, E402
+from app.structured_logging import configure_logging, get_logger, log_event  # noqa: E402
 
-logger = logging.getLogger(__name__)
+configure_logging()
+logger = get_logger(__name__)
 app = celery_app
 
 
@@ -24,9 +26,11 @@ def ping() -> dict[str, str]:
 @worker_ready.connect
 def on_worker_ready(**_: object) -> None:
     broker = urlparse(broker_url)
-    logger.info(
-        "Worker connected to Redis broker at %s:%s db=%s",
-        broker.hostname or "redis",
-        broker.port or 6379,
-        broker.path.lstrip("/") or "0",
+    log_event(
+        logger,
+        logging.INFO,
+        "worker.ready",
+        broker_host=broker.hostname or "redis",
+        broker_port=broker.port or 6379,
+        broker_db=broker.path.lstrip("/") or "0",
     )

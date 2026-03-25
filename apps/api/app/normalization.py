@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import date, datetime, time, timezone
 from decimal import Decimal, InvalidOperation
+import logging
 from typing import Any, Callable, TypeVar
 
 from fastapi import HTTPException
@@ -11,6 +12,7 @@ from sqlalchemy.orm import Session
 
 from app.models.billing import ParcelInvoiceLine, RateCardRule, ThreePLInvoiceLine
 from app.models.common import utcnow
+from app.models.observability import ENTITY_TYPE_UPLOAD_JOB
 from app.models.fulfillment import OrderRecord, Shipment, ShipmentEvent
 from app.models.uploads import (
     UPLOAD_STATUS_NORMALIZATION_FAILED,
@@ -22,6 +24,7 @@ from app.models.uploads import (
     UploadNormalizationError,
     UploadNormalizationRecord,
 )
+from app.observability import add_status_transition
 from app.schema_mapping import (
     SOURCE_KIND_ORDER,
     SOURCE_KIND_PARCEL_INVOICE,
@@ -32,6 +35,7 @@ from app.schema_mapping import (
     get_canonical_fields,
     is_valid_source_kind,
 )
+from app.structured_logging import get_logger, log_event
 from app.upload_files import load_upload_preview
 
 LoaderResult = TypeVar(
@@ -43,6 +47,7 @@ LoaderResult = TypeVar(
     ThreePLInvoiceLine,
     RateCardRule,
 )
+logger = get_logger(__name__)
 
 
 class NormalizationConfigurationError(ValueError):
@@ -68,13 +73,35 @@ def normalize_upload(upload_job_id: str, db: Session) -> dict[str, int | str]:
 
     _validate_mapping_is_normalizable(upload_mapping)
 
+    previous_status = upload_job.status
     upload_job.status = UPLOAD_STATUS_NORMALIZING
     upload_job.normalization_started_at = utcnow()
     upload_job.normalization_completed_at = None
     upload_job.normalized_row_count = 0
     upload_job.normalization_error_count = 0
     upload_job.last_error = None
+    add_status_transition(
+        db,
+        entity_type=ENTITY_TYPE_UPLOAD_JOB,
+        entity_id=upload_job.id,
+        status_from=previous_status,
+        status_to=upload_job.status,
+        summary="Upload normalization started.",
+        metadata={
+            "normalization_task_id": upload_job.normalization_task_id,
+            "source_kind": upload_mapping.source_kind,
+        },
+    )
     db.commit()
+    log_event(
+        logger,
+        logging.INFO,
+        "upload.normalization.started",
+        upload_id=upload_job.id,
+        normalization_task_id=upload_job.normalization_task_id,
+        source_kind=upload_mapping.source_kind,
+        status=upload_job.status,
+    )
 
     db.execute(
         delete(UploadNormalizationError).where(
@@ -133,22 +160,58 @@ def normalize_upload(upload_job_id: str, db: Session) -> dict[str, int | str]:
                 )
                 db.commit()
                 normalization_error_count += 1
+                log_event(
+                    logger,
+                    logging.WARNING,
+                    "upload.normalization.row_error",
+                    upload_id=upload_job.id,
+                    source_kind=upload_mapping.source_kind,
+                    row_number=row_number,
+                    raw_row_ref=raw_row_ref,
+                    error_message=str(exc),
+                )
     except Exception as exc:
         db.rollback()
         upload_job = db.get(UploadJob, upload_job_id)
         if upload_job is not None:
+            previous_status = upload_job.status
             upload_job.status = UPLOAD_STATUS_NORMALIZATION_FAILED
             upload_job.normalization_completed_at = utcnow()
             upload_job.normalized_row_count = normalized_row_count
             upload_job.normalization_error_count = normalization_error_count
             upload_job.last_error = _format_fatal_error(exc)
+            add_status_transition(
+                db,
+                entity_type=ENTITY_TYPE_UPLOAD_JOB,
+                entity_id=upload_job.id,
+                status_from=previous_status,
+                status_to=upload_job.status,
+                summary="Upload normalization failed.",
+                metadata={
+                    "normalization_task_id": upload_job.normalization_task_id,
+                    "normalized_row_count": normalized_row_count,
+                    "normalization_error_count": normalization_error_count,
+                    "last_error": upload_job.last_error,
+                },
+            )
             db.commit()
+            logger.exception(
+                "upload.normalization.failed",
+                extra={
+                    "event": "upload.normalization.failed",
+                    "upload_id": upload_job.id,
+                    "normalization_task_id": upload_job.normalization_task_id,
+                    "normalized_row_count": normalized_row_count,
+                    "normalization_error_count": normalization_error_count,
+                },
+            )
         raise
 
     upload_job = db.get(UploadJob, upload_job_id)
     if upload_job is None:
         raise NormalizationConfigurationError("Upload job disappeared mid-run.")
 
+    previous_status = upload_job.status
     upload_job.status = (
         UPLOAD_STATUS_NORMALIZED_WITH_ERRORS
         if normalization_error_count > 0
@@ -158,7 +221,31 @@ def normalize_upload(upload_job_id: str, db: Session) -> dict[str, int | str]:
     upload_job.normalized_row_count = normalized_row_count
     upload_job.normalization_error_count = normalization_error_count
     upload_job.last_error = None
+    add_status_transition(
+        db,
+        entity_type=ENTITY_TYPE_UPLOAD_JOB,
+        entity_id=upload_job.id,
+        status_from=previous_status,
+        status_to=upload_job.status,
+        summary="Upload normalization completed.",
+        metadata={
+            "normalization_task_id": upload_job.normalization_task_id,
+            "normalized_row_count": normalized_row_count,
+            "normalization_error_count": normalization_error_count,
+        },
+    )
     db.commit()
+    log_event(
+        logger,
+        logging.INFO,
+        "upload.normalization.completed",
+        upload_id=upload_job.id,
+        normalization_task_id=upload_job.normalization_task_id,
+        source_kind=upload_mapping.source_kind,
+        status=upload_job.status,
+        normalized_row_count=normalized_row_count,
+        normalization_error_count=normalization_error_count,
+    )
 
     return {
         "upload_job_id": upload_job_id,

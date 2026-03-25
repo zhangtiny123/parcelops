@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+import logging
 from pathlib import Path
 from typing_extensions import Annotated, Optional
 
@@ -13,6 +14,7 @@ from sqlalchemy.orm import Session
 from app.db.session import get_db
 from app.file_previews import PREVIEW_ROW_LIMIT, FilePreview
 from app.models.common import generate_uuid
+from app.models.observability import ENTITY_TYPE_UPLOAD_JOB
 from app.models.uploads import (
     UPLOAD_STATUS_MAPPED,
     UPLOAD_STATUS_NORMALIZATION_QUEUED,
@@ -26,6 +28,7 @@ from app.models.uploads import (
     UploadNormalizationRecord,
 )
 from app.normalization_tasks import normalize_upload_task
+from app.observability import add_status_transition
 from app.schema_mapping import (
     infer_source_kind_from_columns,
     infer_source_kind_from_filename,
@@ -35,9 +38,11 @@ from app.schema_mapping import (
     suggest_column_mappings,
 )
 from app.settings import get_settings
+from app.structured_logging import get_logger, log_event
 from app.upload_files import get_storage_root, load_upload_preview
 
 router = APIRouter(prefix="/uploads", tags=["uploads"])
+logger = get_logger(__name__)
 
 DEFAULT_UPLOAD_CHUNK_SIZE = 1024 * 1024
 MAX_FILENAME_LENGTH = 255
@@ -415,18 +420,51 @@ async def create_upload(
         source_kind=infer_source_kind_from_filename(original_filename),
     )
     db.add(upload_job)
+    add_status_transition(
+        db,
+        entity_type=ENTITY_TYPE_UPLOAD_JOB,
+        entity_id=upload_job.id,
+        status_from=None,
+        status_to=upload_job.status,
+        summary="Upload received.",
+        metadata={
+            "original_filename": upload_job.original_filename,
+            "file_type": upload_job.file_type,
+            "file_size_bytes": upload_job.file_size_bytes,
+            "source_kind": upload_job.source_kind,
+        },
+    )
 
     try:
         db.commit()
     except SQLAlchemyError as exc:
         db.rollback()
         _cleanup_upload_path(destination_path, storage_root)
+        logger.exception(
+            "upload.create.failed",
+            extra={
+                "event": "upload.create.failed",
+                "upload_id": upload_id,
+                "original_filename": original_filename,
+            },
+        )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to register upload metadata.",
         ) from exc
 
     db.refresh(upload_job)
+    log_event(
+        logger,
+        logging.INFO,
+        "upload.created",
+        upload_id=upload_job.id,
+        original_filename=upload_job.original_filename,
+        file_type=upload_job.file_type,
+        file_size_bytes=upload_job.file_size_bytes,
+        source_kind=upload_job.source_kind,
+        status=upload_job.status,
+    )
     return upload_job
 
 
@@ -538,6 +576,7 @@ def save_upload_mapping(
     db: Annotated[Session, Depends(get_db)],
 ) -> UploadMappingRead:
     upload_job = _get_upload_job_or_404(upload_id, db)
+    previous_status = upload_job.status
     if _mapping_updates_locked(upload_job):
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
@@ -573,17 +612,47 @@ def save_upload_mapping(
     upload_job.normalization_started_at = None
     upload_job.normalization_completed_at = None
     upload_job.last_error = None
+    if previous_status != upload_job.status:
+        add_status_transition(
+            db,
+            entity_type=ENTITY_TYPE_UPLOAD_JOB,
+            entity_id=upload_job.id,
+            status_from=previous_status,
+            status_to=upload_job.status,
+            summary="Upload mapping saved.",
+            metadata={
+                "source_kind": request.source_kind,
+                "mapping_count": len(mapping_payload),
+            },
+        )
 
     try:
         db.commit()
     except SQLAlchemyError as exc:
         db.rollback()
+        logger.exception(
+            "upload.mapping_save.failed",
+            extra={
+                "event": "upload.mapping_save.failed",
+                "upload_id": upload_job.id,
+                "source_kind": request.source_kind,
+            },
+        )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to save upload mapping.",
         ) from exc
 
     db.refresh(upload_mapping)
+    log_event(
+        logger,
+        logging.INFO,
+        "upload.mapping_saved",
+        upload_id=upload_job.id,
+        source_kind=request.source_kind,
+        mapping_count=len(mapping_payload),
+        status=upload_job.status,
+    )
     return _build_upload_mapping_read(upload_mapping)
 
 
@@ -593,6 +662,7 @@ def trigger_upload_normalization(
     db: Annotated[Session, Depends(get_db)],
 ) -> UploadJob:
     upload_job = _get_upload_job_or_404(upload_id, db)
+    previous_status = upload_job.status
     if upload_job.status in {
         UPLOAD_STATUS_NORMALIZATION_QUEUED,
         UPLOAD_STATUS_NORMALIZING,
@@ -639,6 +709,18 @@ def trigger_upload_normalization(
     upload_job.normalization_started_at = None
     upload_job.normalization_completed_at = None
     upload_job.last_error = None
+    add_status_transition(
+        db,
+        entity_type=ENTITY_TYPE_UPLOAD_JOB,
+        entity_id=upload_job.id,
+        status_from=previous_status,
+        status_to=upload_job.status,
+        summary="Upload normalization queued.",
+        metadata={
+            "normalization_task_id": task_id,
+            "source_kind": upload_job.source_kind,
+        },
+    )
 
     try:
         db.commit()
@@ -646,16 +728,43 @@ def trigger_upload_normalization(
     except Exception as exc:
         db.rollback()
         upload_job = _get_upload_job_or_404(upload_id, db)
+        dispatch_previous_status = upload_job.status
         upload_job.status = UPLOAD_STATUS_MAPPED
         upload_job.normalization_task_id = None
         upload_job.last_error = "Failed to dispatch normalization task."
+        add_status_transition(
+            db,
+            entity_type=ENTITY_TYPE_UPLOAD_JOB,
+            entity_id=upload_job.id,
+            status_from=dispatch_previous_status,
+            status_to=upload_job.status,
+            summary="Upload normalization dispatch failed.",
+            metadata={"last_error": upload_job.last_error},
+        )
         db.commit()
+        logger.exception(
+            "upload.normalization_dispatch.failed",
+            extra={
+                "event": "upload.normalization_dispatch.failed",
+                "upload_id": upload_job.id,
+                "normalization_task_id": task_id,
+            },
+        )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to dispatch normalization task.",
         ) from exc
 
     db.expire_all()
+    log_event(
+        logger,
+        logging.INFO,
+        "upload.normalization.queued",
+        upload_id=upload_job.id,
+        normalization_task_id=task_id,
+        source_kind=upload_job.source_kind,
+        status=upload_job.status,
+    )
     return _get_upload_job_or_404(upload_id, db)
 
 

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import logging
 from time import perf_counter
 from typing import Optional
 
@@ -12,10 +13,13 @@ from app.models.copilot import (
     CopilotTrace,
 )
 from app.settings import Settings
+from app.structured_logging import get_logger, log_event
 
 from .adapters import get_llm_adapter
 from .tools import CopilotToolbox
 from .types import ChatMessage, Reference, ToolExecutionResult, UsageStats
+
+logger = get_logger(__name__)
 
 
 @dataclass(frozen=True)
@@ -67,7 +71,7 @@ def run_copilot_chat(
     except Exception as exc:
         response_message = f"Copilot orchestration failed: {exc}"
         latency_ms = _latency_ms(started_at)
-        _persist_trace(
+        trace = _persist_trace(
             db=db,
             adapter=adapter,
             status=response_status,
@@ -77,6 +81,17 @@ def run_copilot_chat(
             references=references,
             latency_ms=latency_ms,
             usage=usage,
+        )
+        logger.exception(
+            "copilot.chat.failed",
+            extra={
+                "event": "copilot.chat.failed",
+                "trace_id": trace.id,
+                "status": response_status,
+                "provider_name": adapter.provider_name,
+                "model_name": adapter.model_name,
+                "latency_ms": latency_ms,
+            },
         )
         raise
 
@@ -91,6 +106,18 @@ def run_copilot_chat(
         references=references,
         latency_ms=latency_ms,
         usage=usage,
+    )
+    log_event(
+        logger,
+        logging.INFO,
+        "copilot.chat.completed",
+        trace_id=trace.id,
+        status=response_status,
+        provider_name=adapter.provider_name,
+        model_name=adapter.model_name,
+        tool_call_count=len(tool_results),
+        reference_count=len(references),
+        latency_ms=latency_ms,
     )
 
     return CopilotChatResult(

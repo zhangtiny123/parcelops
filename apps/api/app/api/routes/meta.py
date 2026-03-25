@@ -20,6 +20,7 @@ def read_root() -> dict[str, str]:
         "docs_url": "/docs",
         "health_url": "/health",
         "db_health_url": "/db-health",
+        "admin_observability_url": "/admin/observability",
         "cases_url": "/cases",
         "copilot_chat_url": "/copilot/chat",
         "uploads_url": "/uploads",

@@ -2,20 +2,28 @@ from __future__ import annotations
 
 from datetime import date, datetime
 from decimal import Decimal
+import logging
 from typing_extensions import Annotated, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, ConfigDict
 from sqlalchemy import Select, select
-from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db
 from app.issue_dashboard import get_issue_dashboard_summary, list_high_severity_issues
+from app.observability import (
+    complete_issue_detection_run,
+    fail_issue_detection_run,
+    start_issue_detection_run,
+)
+from app.models.observability import IssueDetectionRun
 from app.models.recovery import RecoveryIssue
 from app.recovery_issue_detection import run_issue_detection
+from app.structured_logging import get_logger, log_event
 
 router = APIRouter(prefix="/issues", tags=["issues"])
+logger = get_logger(__name__)
 
 
 class RecoveryIssueRead(BaseModel):
@@ -37,6 +45,10 @@ class RecoveryIssueRead(BaseModel):
 
 
 class RecoveryIssueDetectionRead(BaseModel):
+    run_id: str
+    status: str
+    started_at: datetime
+    completed_at: Optional[datetime]
     created_count: int
     updated_count: int
     unchanged_count: int
@@ -107,17 +119,67 @@ def _apply_issue_filters(
 def trigger_issue_detection(
     db: Annotated[Session, Depends(get_db)],
 ) -> RecoveryIssueDetectionRead:
+    run = start_issue_detection_run(db)
+    db.commit()
+    db.refresh(run)
+    log_event(
+        logger,
+        logging.INFO,
+        "issue_detection.started",
+        run_id=run.id,
+        status=run.status,
+    )
+
     try:
         detection_result = run_issue_detection(db)
+        run = db.get(IssueDetectionRun, run.id)
+        if run is None:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to reload issue detection run.",
+            )
+        complete_issue_detection_run(db, run=run, result=detection_result)
         db.commit()
-    except SQLAlchemyError as exc:
+        db.refresh(run)
+    except Exception as exc:
         db.rollback()
+        persisted_run = db.get(IssueDetectionRun, run.id)
+        if persisted_run is not None:
+            fail_issue_detection_run(
+                db,
+                run=persisted_run,
+                error_message=str(exc) or "Failed to run issue detection.",
+            )
+            db.commit()
+        logger.exception(
+            "issue_detection.failed",
+            extra={
+                "event": "issue_detection.failed",
+                "run_id": run.id,
+            },
+        )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to run issue detection.",
         ) from exc
 
+    log_event(
+        logger,
+        logging.INFO,
+        "issue_detection.completed",
+        run_id=run.id,
+        status=run.status,
+        created_count=run.created_count,
+        updated_count=run.updated_count,
+        unchanged_count=run.unchanged_count,
+        deleted_duplicate_count=run.deleted_duplicate_count,
+        total_issue_count=run.total_issue_count,
+    )
     return RecoveryIssueDetectionRead(
+        run_id=run.id,
+        status=run.status,
+        started_at=run.started_at,
+        completed_at=run.completed_at,
         created_count=detection_result.created_count,
         updated_count=detection_result.updated_count,
         unchanged_count=detection_result.unchanged_count,
